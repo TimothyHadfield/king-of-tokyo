@@ -20,6 +20,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | Screen tests | `tests/ui-play.mjs`: full games at 393 px WebKit (incl. 6 monsters + reload) and 1280 px Chromium, no console errors, no overflow |
 | QA pass 1 fixes (2026-10-20) | Done; `tests/ui-fixes.mjs` (14 checks, all seen failing on the old build): double-tap guard, broken-save restore, lobby monsters, 2-player switch off on 2011, Back closes sheet, code with spaces, single toasts, kept dice after reload, Join above the fold at 6, Odds at 0 rerolls |
 | Own SVG art (6 monsters, dice faces, card icons, skyline) | Done |
+| Sound & effects (2026-10-20) | Done: synthesised sounds for every game event, win/lose confetti, animations; Settings "Sound & effects". Tests `tests/fx.test.js` (node) + `tests/fx-ui.mjs <url>` (Chromium, spies FX) |
 | Visual design pass (2026-10-20) | Done: phone sale cards get a faint icon watermark, readable "· N left" on Reroll, Sweep tile shows ⚡ 2 / Sweep, laptop Tokyo scene big + centred, dice 66 px, sale-card text no longer clipped, log 13 px, no "Gigazaur / Gigazaur" subtitle, no "You You reaches" in the log |
 
 ## Authorized next steps
@@ -27,6 +28,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 
 ## Standing instructions (Tim's words)
 - "add risk, clue, battleship, connect four, stratego, clue, checkers, pandemic, splendor, king of tokyo, 7 wonders, and evolution to the list of games." (2026-10-20)
+- "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered." (2026-10-20)
 - Global: never ask permission; $0; headless testing only; Tim decides looks, wording and names.
 
 ## Traps
@@ -36,6 +38,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 - `?botms=40` in the URL speeds the computers up for screen tests.
 - Tap guard (app.js, top): drops a 2nd tap within 450 ms at the same spot only if the first tap's element was redrawn (or a sheet opened). A blanket time guard broke fast test clicks on other buttons; don't go back to that.
 - `js/online.js` is a copy of the shared `_online` module; when the shared seat fix lands, re-copy it unchanged and rerun `tests/two-browsers.mjs`.
+- `js/fx.js` is a copy of `Board and Card Games/_fx/fx.js`: never edit it; game sounds go in `js/fx-events.js` (`defineSounds`). Sounds come from snapshot diffs (`KotFx.events(prev, next, me)`), never from button handlers, so computer and online moves sound the same. The fx "?" is a `.q` without `data-tip`; the app's popover handler only takes `.q[data-tip]`.
 - Worktrees go in `C:/Users/timha/AppData/Local/Temp/claude/wt/`, never under `.claude`.
 
 ## Decisions
@@ -45,7 +48,31 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 - Card win % leaves out buys in the game's last round (those are bought to finish).
 - Knock-out odds use the measured claw share of computer attackers' final dice (measured 13.6%, `Bots.CFG.claw` = 0.13), not 1/6.
 
+## Sound map (event → sound, `js/fx-events.js` plan)
+| Event | Sound | Animation |
+|---|---|---|
+| Dice thrown (roll/reroll) | `diceRoll` per die (40 ms apart, like the tumble), `diceLand` per die as it lands (~300 ms) | CSS tumble (speed-scaled) |
+| Keep / unkeep a die | `place` high / lower | die lifts (existing) |
+| Die changed by a card | `place` | – |
+| Damage (claws, poison) | `smash` (louder for bigger hits) | red flash on the monster, CSS shake; 4+ shakes the Tokyo board |
+| Hearts heal | `heal` | +♥ float |
+| Energy gained / spent | `zap` / `coins` | count-up on the chip, +⚡ float |
+| Points gained / lost | `star` / `miss` | count-up, +★ float |
+| Enter Tokyo | `roar` (custom synth growl) | stomp + board shake |
+| Leave Tokyo | `whoosh` | – |
+| Buy a card | `coins` + `cardDeal`, new card `cardFlip` | buyer pops, new card in your row pops |
+| Sweep | `shuffle` | cards deal in |
+| Knocked out / It Has a Child | `explosion` / `heal`+`ding` | flash + shake |
+| Your turn | `turn` | Roll button pulses |
+| Decision mine off-turn (stay? Wings?) | `turn` lower, quieter | main button pulses |
+| Illegal tap | `error` | toast |
+| Game over | celebrate `win` (winner's colour confetti) / `lose`; local: win if a person won | – |
+| Big moment | celebrate `big`: you gain 3+ ★ in one step, or knock a monster out on your turn | – |
+Others' sounds play at 0.85 volume. Button taps: fx.js default, skipping dice.
+
 ## NOT verified
+- Sound by ear: no one has listened (headless). Real iPhone audio unlock and silent switch not tried.
+- `tests/ui-fixes.mjs` crashed once in 4 runs on 2026-10-20 (no message kept); the other 3 passed.
 - Card effect wording for ~40 cards comes from one source (BGA's licensed text); the 2011 texts from fan lists.
 - Psychic Probe: the active monster can't use Herd Culler / Stretchy / Plot Twist after a probe (the BGA sheet says it may).
 - Real iPhone (only WebKit at 393 px).

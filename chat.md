@@ -12,3 +12,8 @@
 - **Asked** (Tim): "once you're finished with all the games, review them again for design improvements especially visually..."
 - **Built**: CSS polish + small render tweaks (app.js cardFace watermark, Sweep markup, pboard subtitle, logList); no rules changes. Kept: dice lift on keep (deliberate feedback), phone Odds "Your health" wrap (nowrap clipped it).
 - **Verified**: 37 engine + 6 online + ui-fixes ALL PASS + ui-play (393 WebKit 6 monsters with reload, 1280 Chromium). Before/after shots in the manager's scratchpad `design/king-of-tokyo/`.
+
+## 2026-10-20: sound & effects (builder, manager wave)
+- **Asked** (Tim): "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered."
+- **Built**: `js/fx.js` (shared library, copied unchanged), `js/fx-events.js` (snapshot diff → events → sounds, plus our own roar/smash/heal/zap/star recipes), app.js hooks (onSnap → fxReact, keep knock, error sound, countUp/flash/shake/pop/pulse, celebrate), Settings "Sound & effects" panel, CSS gating the game's own animations (`fx-noanim`, `fx-fast`).
+- **Verified**: tests/fx.test.js (3 tests) + tests/fx-ui.mjs, both seen failing on the old build; 37 engine, ui-fixes, ui-play 393 WebKit + 1280 Chromium all pass. Shots in the manager scratchpad `design/king-of-tokyo-fx/`.
