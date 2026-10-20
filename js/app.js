@@ -10,6 +10,22 @@ const GAME = window.KotGame.game;
 const STR = window.KotStrength || {};
 const VERSION = '1.1';
 
+// ------------------------------------------------------------------ sound & effects (js/fx.js, js/fx-events.js)
+// if either file failed to load, the game still runs, silent and still
+const NOFX = (() => { const z = () => Promise.resolve(); return { settings: { animations: false, animSpeed: 'normal' }, init() {}, define() {}, onChange() {}, play: () => false, celebrate: z, pop: z, shake: z, pulse: z, flash: z, countUp: z, renderSettings() {} }; })();
+const FX = window.FX || NOFX, KF = window.KotFx || { events: () => [], plan: () => [], defineSounds() {} };
+KF.defineSounds(FX);
+// dice play their own keep/unkeep knock, so the automatic button tap skips them
+FX.init({ game: 'king-of-tokyo', accent: '#6ea8fe', clickSelector: 'button:not([data-die]), [role="button"], .btn' });
+const fxSp = () => (FX.settings.animSpeed === 'fast' ? 0.55 : 1);
+// the game's own CSS animations (dice tumble, card deal, Tokyo stomp, floats, hit shake) follow the switches too
+function fxClasses() {
+  const s = FX.settings;
+  document.body.classList.toggle('fx-noanim', !s.animations);
+  document.body.classList.toggle('fx-fast', s.animations && s.animSpeed === 'fast');
+}
+FX.onChange(fxClasses); fxClasses();
+
 // ------------------------------------------------------------------ storage
 const KEY = 'kot-lab-v1';
 const DEFAULTS = { level: 'medium', edition: '2016', bay: true, duel: false, speed: 'normal', hints: true, name: '', kinds: ['human', 'computer', 'computer', 'computer'] };
@@ -76,7 +92,7 @@ const monName = i => MONSTERS[i] ? MONSTERS[i].name : 'Monster';
 let popEl = null;
 function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
 document.addEventListener('click', e => {
-  const q = e.target.closest('.q');
+  const q = e.target.closest('.q[data-tip]'); // the Sound "?" (fx.js) opens its own line instead
   if (q) {
     e.stopPropagation(); closePop();
     popEl = document.createElement('div'); popEl.className = 'pop'; popEl.innerHTML = q.dataset.tip; document.body.appendChild(popEl);
@@ -170,6 +186,7 @@ function closeRoom() {
   clearTimeout(ui.autoDone);
 }
 function onSnap(s) {
+  const prev = snap && snap.pub ? snap.pub : null;
   snap = s;
   if (ui.mode === 'local' && room && room.state) {
     if (s.status === 'finished') store.saved = null;
@@ -177,6 +194,43 @@ function onSnap(s) {
     save();
   }
   if (ui.tab === 'play') renderPlay();
+  fxReact(prev, s);
+}
+
+// sounds + animations for what changed between two snapshots (every mode: computers and online players too)
+const monEls = i => [...document.querySelectorAll(`#v-play [data-mon="${i}"].mon, #v-play [data-mon="${i}"].pboard`)].filter(e => e.offsetParent !== null);
+function fxReact(prev, s) {
+  if (!s || !s.pub) return;
+  const pub = s.pub, me = s.mySeat;
+  let evs = [];
+  try { evs = KF.events(prev, pub, me); } catch (e) { evs = []; }
+  if (!evs.length) return;
+  for (const p of KF.plan(evs, me, fxSp())) { if (p.at > 0) setTimeout(() => FX.play(p.snd, p.o), p.at); else FX.play(p.snd, p.o); }
+  const onPlay = ui.tab === 'play';
+  const board = onPlay ? $('#v-play .board') : null;
+  let big = null;
+  for (const x of evs) {
+    if (x.e === 'over') {
+      // local: a person at this screen won (pass-and-play counts every person); online: this player
+      const won = ui.mode === 'local' ? x.winners.some(i => pub.players[i].kind === 'human') : x.mine;
+      const colors = x.winners.map(i => MONSTERS[pub.players[i].mon] && MONSTERS[pub.players[i].mon].color).filter(Boolean).concat(['#f0b354', '#f4c542', '#ef5468', '#e8eaf0']);
+      setTimeout(() => FX.celebrate(x.winners.length ? { kind: won ? 'win' : 'lose', colors } : { kind: 'lose' }), 700);
+      continue;
+    }
+    if (!onPlay) continue;
+    if (x.e === 'dmg') { monEls(x.s).forEach(el => FX.flash(el, 'rgba(239,84,104,.55)')); if (x.n >= 4 && board) FX.shake(board); }
+    else if (x.e === 'ko') { monEls(x.s).forEach(el => { FX.flash(el, 'var(--bad)'); FX.shake(el); }); if (board) FX.shake(board); if (pub.cur === me && x.s !== me) big = big || monEls(x.s)[0] || board; }
+    else if (x.e === 'enter') { if (board) FX.shake(board); }
+    else if (x.e === 'vp' || x.e === 'en') {
+      const k = x.e, was = prev && prev.players[x.s] ? prev.players[x.s][k] : null, now = pub.players[x.s][k];
+      if (was != null && was < now) monEls(x.s).forEach(el => { const n = el.querySelector(`[data-n="${k}"]`); if (n) FX.countUp(n, was, now, { duration: 500 }); });
+      if (k === 'vp' && x.s === me && x.n >= 3) big = monEls(me)[0] || board;
+    }
+    else if (x.e === 'buy') { monEls(x.s).forEach(el => FX.pop(el)); if (x.s === me) { const c = [...document.querySelectorAll('#v-play .mine .chipcard[data-card]')].pop(); if (c) FX.pop(c); } }
+    else if (x.e === 'turn' && x.mine) { const b = $('#btn-roll'); if (b) FX.pulse(b); }
+    else if (x.e === 'ask') { const b = $('#v-play .acts .btn.primary, #v-play .acts .btn.warm'); if (b) FX.pulse(b); }
+  }
+  if (big && !evs.some(x => x.e === 'over')) FX.celebrate({ kind: 'big', at: big, colors: ['#f0b354', '#f4c542', '#e8eaf0'] });
 }
 
 // act for the seat this screen plays
@@ -186,12 +240,12 @@ async function act(a) {
   clearTimeout(ui.autoDone);
   if (ui.mode === 'local') {
     const r = room.act(a, snap.mySeat);
-    if (!r.ok) toast(r.message);
+    if (!r.ok) { FX.play('error'); toast(r.message); }
   } else {
     // one move in flight at a time: a second tap before the room answers is dropped
     if (ui.acting) return;
     ui.acting = true;
-    try { const r = await room.act(a); if (!r.ok) toast(r.message); } finally { ui.acting = false; }
+    try { const r = await room.act(a); if (!r.ok) { FX.play('error'); toast(r.message); } } finally { ui.acting = false; }
   }
 }
 
@@ -386,8 +440,8 @@ function renderGame(v) {
     const tok = (p.poison ? '☠' + p.poison : '') + (p.shrink ? ' ↓' + p.shrink : '');
     return `<div class="${cls.join(' ')}" data-mon="${i}">${tok ? `<span class="tok">${tok}</span>` : ''}<span class="av">${playerFace(p, i)}</span>
       <span class="nmx">${esc(i === me ? 'You' : p.name)}</span>
-      <span class="st"><span style="color:var(--hp)">${Art.icon('H', 11)}${p.hp}</span><span style="color:var(--vp)">${Art.icon('VP', 11)}${p.vp}</span></span>
-      <span class="st"><span style="color:var(--en)">${Art.icon('E', 11)}${p.en}</span>${p.cards.length ? `<span class="muted" style="font-size:10.5px">${p.cards.length}▤</span>` : ''}</span></div>`;
+      <span class="st"><span style="color:var(--hp)">${Art.icon('H', 11)}<span data-n="hp">${p.hp}</span></span><span style="color:var(--vp)">${Art.icon('VP', 11)}<span data-n="vp">${p.vp}</span></span></span>
+      <span class="st"><span style="color:var(--en)">${Art.icon('E', 11)}<span data-n="en">${p.en}</span></span>${p.cards.length ? `<span class="muted" style="font-size:10.5px">${p.cards.length}▤</span>` : ''}</span></div>`;
   }).join('');
   const boards = P.map((p, i) => {
     const cls = ['pboard'];
@@ -446,7 +500,7 @@ function renderGame(v) {
       if (hint.has(k)) cls.push('hint');
       if (rolledNow.has(k)) cls.push('roll');
       if (ask === 'probe' || ui.change) cls.push('pick');
-      return `<button class="${cls.join(' ')}" data-die="${k}" style="animation-delay:${rolledNow.has(k) ? (k * 40) : 0}ms" aria-label="${d.f}">${Art.face(d.f)}</button>`;
+      return `<button class="${cls.join(' ')}" data-die="${k}" style="animation-delay:${rolledNow.has(k) ? Math.round(k * 40 * fxSp()) : 0}ms" aria-label="${d.f}">${Art.face(d.f)}</button>`;
     }).join('');
   } else if (curP) {
     const n = 6;
@@ -600,6 +654,7 @@ function floats(pub) {
   const key = pub.turnNo + '|' + pub.log.length + '|' + JSON.stringify(pub.fx);
   if (key === ui.fxKey || !pub.fx.length) { ui.fxKey = key; return; }
   ui.fxKey = key;
+  if (!FX.settings.animations) return;
   const sum = {};
   for (const f of pub.fx) {
     if (!['hp', 'vp', 'en'].includes(f.k)) continue;
@@ -646,7 +701,7 @@ function wireGame(v, pub, me, ask) {
     if (ask === 'probe') { act({ t: 'probe', i: k }); return; }
     if (ask !== 'roll') return;
     if (ui.change) { facePicker(k, ui.change); return; }
-    if (ui.keep.has(k)) ui.keep.delete(k); else ui.keep.add(k);
+    if (ui.keep.has(k)) { ui.keep.delete(k); FX.play('place', { pitch: 1.3, vol: 0.5 }); } else { ui.keep.add(k); FX.play('place', { pitch: 1.7, vol: 0.6 }); }
     store.keepSel = { key: ui.lastRoll, keep: [...ui.keep] }; save();
     renderPlay();
   });
@@ -930,10 +985,12 @@ function renderSettings() {
       <div class="setrow"><div class="grow"><b>Best-keep dots</b><span>Green dot under the best dice to keep</span></div><label class="switch"><input type="checkbox" data-sw="hints" ${st.hints ? 'checked' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Computer speed</b></div><div style="width:170px">${seg('speed', [['normal', 'Normal'], ['fast', 'Fast']])}</div></div>
     </div>
+    <div class="panel"><div class="row"><span class="label grow">Sound &amp; effects</span></div><div id="fx-box"></div></div>
     <div class="ver">King of Tokyo Lab ${VERSION} · fan-made study tool, not affiliated with the publisher · <a href="../">All games</a></div>
   </div>`;
   v.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { st[b.dataset.k] = b.dataset.v; save(); renderSettings(); });
   v.querySelectorAll('[data-sw]').forEach(i => i.onchange = () => { st[i.dataset.sw] = i.checked; save(); });
+  FX.renderSettings($('#fx-box', v));
 }
 
 // ================================================================== boot

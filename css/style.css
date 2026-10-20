@@ -311,3 +311,24 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 
 @media (max-width: 360px) { .die { width: 38px; height: 38px; } .market .pc .nm { font-size: 11px; } }
 @media (max-height: 640px) and (max-width: 899px) { #game { grid-template-rows: auto 74px auto auto auto auto auto auto; gap: 5px; } .spot .occ > svg { width: 48px; height: 48px; } .market { height: 92px; } }
+
+/* Sound & effects (js/fx.js): rows match the other Settings rows; the switches gate the game's own animations too */
+.fx-set .fx-row { padding: 0; min-height: 46px; border-top: 0; }
+.fx-set .fx-lab { font-weight: 650; }
+.fx-set .seg { width: 170px; flex: none; }
+.fx-noanim .die.roll, .fx-noanim .pc.deal, .fx-noanim .spot .occ, .fx-noanim .float, .fx-noanim .mon.hit,
+.fx-noanim .sheet, .fx-noanim .sheet-back, .fx-noanim .toast { animation: none !important; }
+.fx-fast .die.roll { animation-duration: .28s; }
+.fx-fast .pc.deal { animation-duration: .18s; }
+.fx-fast .spot .occ { animation-duration: .25s; }
+.fx-fast .mon.hit { animation-duration: .2s; }
+.fx-fast .float { animation-duration: .6s; }
+.fx-set .switch { width: 48px; height: 28px; }
+.fx-set .switch input { width: 0; height: 0; }
+.fx-set .switch span { background: #2f3548; border-radius: 14px; }
+.fx-set .switch span::after { width: 22px; height: 22px; }
+.fx-set .switch input:checked + span { background: var(--accent); }
+.fx-set .switch input:checked + span::after { transform: translateX(20px); }
+.fx-set .seg button { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); color: var(--text); font-size: 14px; padding: 4px 6px; }
+.fx-set .seg button[aria-pressed="true"] { background: rgba(110,168,254,.14); border-color: var(--accent); color: var(--accent); }
+.fx-set .seg { background: none; border: 0; padding: 0; gap: 6px; }
