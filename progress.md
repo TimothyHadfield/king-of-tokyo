@@ -21,6 +21,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | QA pass 1 fixes (2026-10-20) | Done; `tests/ui-fixes.mjs` (14 checks, all seen failing on the old build): double-tap guard, broken-save restore, lobby monsters, 2-player switch off on 2011, Back closes sheet, code with spaces, single toasts, kept dice after reload, Join above the fold at 6, Odds at 0 rerolls |
 | Own SVG art (6 monsters, dice faces, card icons, skyline) | Done |
 | Sound & effects (2026-10-20) | Done: synthesised sounds for every game event, win/lose confetti, animations; Settings "Sound & effects". Tests `tests/fx.test.js` (node) + `tests/fx-ui.mjs <url>` (Chromium, spies FX) |
+| Table look (2026-10-20) | Done: play screen seen from your seat on a dark-wood table: opponents' monster boards across the far side (heart/star dials, green cubes, keep cards: a small fan on phone and mini cards on laptop), the Tokyo board (City/Bay spots with standees), the market (stacked deck, 3 face-up poker-size cards, a loose discard pile), black dice with green symbols, and your board plus keep cards at the bottom edge. Cards are dealt from the deck with a 3-D flip, and bought or swept cards slide off. Log and odds sit in a slim side panel on laptop. Research is in the manager scratchpad `table/king-of-tokyo/real.md` |
 | Visual design pass (2026-10-20) | Done: phone sale cards get a faint icon watermark, readable "· N left" on Reroll, Sweep tile shows ⚡ 2 / Sweep, laptop Tokyo scene big + centred, dice 66 px, sale-card text no longer clipped, log 13 px, no "Gigazaur / Gigazaur" subtitle, no "You You reaches" in the log |
 
 ## Authorized next steps
@@ -29,6 +30,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 ## Standing instructions (Tim's words)
 - "add risk, clue, battleship, connect four, stratego, clue, checkers, pandemic, splendor, king of tokyo, 7 wonders, and evolution to the list of games." (2026-10-20)
 - "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered." (2026-10-20)
+- "could you also make sure that each of the games also have a look to them so that the game (either board or card layout) looks almost identical to how the board or card layout looks like in real life, so it's easy to understand if you've already played it before, and also so it feels more like you're actually playing in real life rather than you're playing it online. Even things like how youre cards or other things are laid out infront of you, make it look like they are actual cards laid out similar to how it looks like in real life. Make the decks look like actual decks. Make the board have the same design as it does in real life with the same layouts. It should look kind of like you're looking through a camera that is connected to a user's glasses that is playing in real life (not actually, but the layout and style of everything should be similar)." (2026-10-20)
 - Global: never ask permission; $0; headless testing only; Tim decides looks, wording and names.
 
 ## Traps
@@ -39,6 +41,10 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 - Tap guard (app.js, top): drops a 2nd tap within 450 ms at the same spot only if the first tap's element was redrawn (or a sheet opened). A blanket time guard broke fast test clicks on other buttons; don't go back to that.
 - `js/online.js` is a copy of the shared `_online` module; when the shared seat fix lands, re-copy it unchanged and rerun `tests/two-browsers.mjs`.
 - `js/fx.js` is a copy of `Board and Card Games/_fx/fx.js`: never edit it; game sounds go in `js/fx-events.js` (`defineSounds`). Sounds come from snapshot diffs (`KotFx.events(prev, next, me)`), never from button handlers, so computer and online moves sound the same. The fx "?" is a `.q` without `data-tip`; the app's popover handler only takes `.q[data-tip]`.
+- `css/table.css` and `js/table.js` are copies of `Board and Card Games/_table/`: never edit them; re-copy byte for byte. Git on Windows checks them out with CRLF, but the committed blobs match the sources exactly.
+- The discard pile's faces are tracked on this screen only (`trackDiscards` in app.js, multiset diff of market + players' cards). The room shares only the count, so after a reload the pile shows face-down blanks until new discards happen.
+- The Tokyo standee stomps only when the occupant changes (`ui.tokyoSeen`). Each die's tilt (`--tilt`) is seeded from turn/roll/index, so redraws don't wobble.
+- The local Python `http.server` drops connections under Chromium's burst (`ERR_CONNECTION_REFUSED` → pageerror). Use a node static server for desktop screen tests.
 - Worktrees go in `C:/Users/timha/AppData/Local/Temp/claude/wt/`, never under `.claude`.
 
 ## Decisions
@@ -77,6 +83,8 @@ Others' sounds play at 0.85 volume. Button taps: fx.js default, skipping dice.
 - Psychic Probe: the active monster can't use Herd Culler / Stretchy / Plot Twist after a probe (the BGA sheet says it may).
 - Real iPhone (only WebKit at 393 px).
 - One desktop run logged a single `ERR_CONNECTION_REFUSED` from the local Python server; three reruns were clean. Assumed local-server noise.
+- `ui-fixes.mjs` "double tap on Roll" is flaky while the machine is loaded. On 2026-10-20 the untouched old build also failed it (1 in 4, then 3 in 4). The measured gap between the two taps grew to 500–650 ms, past the 450 ms guard. The table build renders about 3× slower (≈100 ms vs 36 ms per redraw under load). Not tried on a real phone.
+- Table look: the card animations (deal/flip/slide) were seen only in headless shots, not watched in motion on a phone.
 
 ## Rejected / parked
 - ~~Official card or monster art from BGA's repo~~ copyright; Tim's call if he ever wants it.

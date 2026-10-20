@@ -13,6 +13,20 @@
 - **Built**: CSS polish + small render tweaks (app.js cardFace watermark, Sweep markup, pboard subtitle, logList); no rules changes. Kept: dice lift on keep (deliberate feedback), phone Odds "Your health" wrap (nowrap clipped it).
 - **Verified**: 37 engine + 6 online + ui-fixes ALL PASS + ui-play (393 WebKit 6 monsters with reload, 1280 Chromium). Before/after shots in the manager's scratchpad `design/king-of-tokyo/`.
 
+## 2026-10-20: table look (builder, manager wave)
+- **Asked** (Tim): make each game look like the real board or cards on a real table, "like you're looking through a camera that is connected to a user's glasses" (full quote in progress.md).
+- **Built**:
+  - Play screen rebuilt as a table from your seat: wood surface, opponents' boards, Tokyo board with standees, deck, 3 cards and discard, black and green dice, your board and cards at the bottom.
+  - Shared `_table` kit copied in; `_fx/fx.js` 1.0.3 re-copied.
+  - Two read-only reviews against `real.md`, with their fixes applied: standee only stomps on entry, opponents' card fan, 40 px buttons, long names, tilted dice, landscape market placement.
+- **Verified** (2026-10-20):
+  - engine 37 + fx 3 + online 6 pass.
+  - ui-play: 393 WebKit and 1280 Chromium.
+  - fx-ui and two-browsers pass.
+  - Shots at 320, 393, 659 landscape and 1280: no scroll, no overflow, no console errors.
+  - Effects speed and game Speed change independently.
+  - The ui-fixes double-tap check is flaky under load, on the old build too (see NOT verified).
+
 ## 2026-10-20: sound & effects (builder, manager wave)
 - **Asked** (Tim): "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered."
 - **Built**: `js/fx.js` (shared library, copied unchanged), `js/fx-events.js` (snapshot diff → events → sounds, plus our own roar/smash/heal/zap/star recipes), app.js hooks (onSnap → fxReact, keep knock, error sound, countUp/flash/shake/pop/pulse, celebrate), Settings "Sound & effects" panel, CSS gating the game's own animations (`fx-noanim`, `fx-fast`).
