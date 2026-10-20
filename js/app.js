@@ -8,7 +8,7 @@ const syncEd = ed => window.KotCards.setEdition(ed || (snap && snap.pub ? snap.p
 const E = window.KotEngine, D = window.KotDice, Bots = window.KotBots, Art = window.KotArt;
 const GAME = window.KotGame.game;
 const STR = window.KotStrength || {};
-const VERSION = '1.0';
+const VERSION = '1.1';
 
 // ------------------------------------------------------------------ storage
 const KEY = 'kot-lab-v1';
@@ -26,7 +26,8 @@ function load() {
   if (!Array.isArray(s.kinds) || s.kinds.length < 2 || s.kinds.length > 6 || !s.kinds.every(k => k === 'human' || k === 'computer')) s.kinds = DEFAULTS.kinds.slice();
   if (!s.kinds.includes('human')) s.kinds[0] = 'human';
   const saved = o.saved && typeof o.saved === 'object' && o.saved.state && Array.isArray(o.saved.kinds) ? o.saved : null;
-  return { settings: s, saved, online: !!o.online, study: Array.isArray(o.study) ? o.study.slice(-200) : [] };
+  const keepSel = o.keepSel && typeof o.keepSel === 'object' && typeof o.keepSel.key === 'string' && Array.isArray(o.keepSel.keep) ? o.keepSel : null;
+  return { settings: s, saved, online: !!o.online, study: Array.isArray(o.study) ? o.study.slice(-200) : [], keepSel };
 }
 const store = load();
 // each seat's monster: distinct, one per seat
@@ -47,10 +48,27 @@ const fmt1 = x => (Math.round(x * 10) / 10).toFixed(1);
 // red → green scale for a 0..1 goodness value
 function scale(g) { g = Math.max(0, Math.min(1, g)); const h = Math.round(g * 130); return `hsl(${h} 70% 62%)`; }
 function toast(msg) {
-  const old = $('.toast'); if (old) old.remove();
+  msg = String(msg);
+  const old = $('.toast');
+  // the same message from two places (an action's result and the room's error event) shows once
+  if (old && old.textContent === msg) { clearTimeout(old._t); old._t = setTimeout(() => old.remove(), 2600); return; }
+  if (old) old.remove();
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  t._t = setTimeout(() => t.remove(), 2600);
 }
+
+// tap guard: a quick second tap (double tap / double-click) must not land on whatever was just drawn
+// in the same spot (Roll -> Reroll, Reroll -> the next Reroll, a card -> its Buy sheet). Taps elsewhere pass.
+const tapGuard = { t: -1e9, x: 0, y: 0, el: null };
+document.addEventListener('click', e => {
+  const tgt = e.target && e.target.closest ? e.target : null;
+  if (!tgt || !tgt.closest('#v-play, #sheet')) return;
+  const g = tapGuard, now = performance.now();
+  const near = Math.abs(e.clientX - g.x) < 44 && Math.abs(e.clientY - g.y) < 44;
+  const redrawn = g.el && tgt !== g.el && (!g.el.isConnected || (!!tgt.closest('#sheet') && !g.el.closest('#sheet')));
+  if (now - g.t < 450 && near && redrawn) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return; }
+  g.t = now; g.x = e.clientX; g.y = e.clientY; g.el = tgt;
+}, true);
 function costTag(n) { return `<span class="cost">${Art.icon('E', 14)}${n}</span>`; }
 const monName = i => MONSTERS[i] ? MONSTERS[i].name : 'Monster';
 
@@ -101,7 +119,11 @@ function setTab(t, push) {
   render();
 }
 document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab, true); });
-window.addEventListener('popstate', () => { if (ui.sheetOpen) { closeSheet(); return; } setTab((location.hash || '#play').slice(1), false); });
+// Back with a sheet open only closes the sheet: the address goes back to the tab that is still shown
+window.addEventListener('popstate', () => {
+  if (ui.sheetOpen) { closeSheet(); history.pushState({ tab: ui.tab }, '', '#' + ui.tab); return; }
+  setTab((location.hash || '#play').slice(1), false);
+});
 
 function render() {
   if (ui.tab === 'play') renderPlay();
@@ -123,15 +145,24 @@ function startLocal(resume) {
   const seats = kinds.map((k, i) => ({ kind: k, name: k === 'human' ? (kinds.filter(x => x === 'human').length > 1 ? 'Player ' + (++hn) : (st.name || 'You')) : 'Computer' }));
   const g = resume ? Object.assign({}, GAME, { setup: () => resume.state }) : GAME;
   // computers get their monster's name
+  ui.restoring = !!resume;
   try {
     fixMons();
     room = createLocal({ game: g, seats, options: { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons }, botDelayMs: speedMs() });
-  } catch (e) { store.saved = null; save(); toast('Couldn’t restore the saved game.'); return; }
-  ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = ''; ui.marketSeen = [];
-  if (!resume) store.study = [];
-  room.on('change', s => onSnap(s));
-  room.on('error', e => toast(String(e && e.message || e)));
-  room.start();
+    ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = ''; ui.marketSeen = [];
+    if (!resume) { store.study = []; store.keepSel = null; }
+    room.on('change', s => onSnap(s));
+    room.on('error', e => toast(String(e && e.message || e)));
+    // a resumed game is restored and drawn inside this try: a broken save fails here, not later
+    room.start();
+    if (resume && (!snap || !snap.pub || !document.querySelector('#v-play #game'))) throw new Error('nothing drawn');
+  } catch (e) { ui.restoring = false; restoreFailed(); return; }
+  ui.restoring = false;
+}
+function restoreFailed() {
+  closeRoom(); store.saved = null; save();
+  toast('Couldn’t restore the saved game.');
+  if (ui.tab === 'play') renderPlay();
 }
 function closeRoom() {
   if (room && room.mode === 'local' && room.close) room.close();
@@ -157,8 +188,10 @@ async function act(a) {
     const r = room.act(a, snap.mySeat);
     if (!r.ok) toast(r.message);
   } else {
-    const r = await room.act(a);
-    if (!r.ok) toast(r.message);
+    // one move in flight at a time: a second tap before the room answers is dropped
+    if (ui.acting) return;
+    ui.acting = true;
+    try { const r = await room.act(a); if (!r.ok) toast(r.message); } finally { ui.acting = false; }
   }
 }
 
@@ -208,14 +241,14 @@ function renderSetup(v) {
     <div class="panel">
       <div class="row"><span class="label grow">Monsters</span>${qTip('Each extra “Person” seat is another player passing this phone. With 5 or 6 monsters, Tokyo Bay opens as a second spot in Tokyo.')}</div>
       <div class="seg" id="seg-n">${[2, 3, 4, 5, 6].map(n => `<button data-n="${n}" aria-pressed="${kinds.length === n}">${n}</button>`).join('')}</div>
-      <div class="seats">${seatRows}</div>
+      <div class="seats${kinds.length >= 5 ? ' dense' : ''}">${seatRows}</div>
       ${store.saved ? `<div class="row"><button class="btn warm grow" id="btn-resume">Resume game</button><button class="btn" id="btn-new">New game</button></div>`
         : `<button class="btn primary" id="btn-new">Start game</button>`}
     </div>
     <div class="panel">
       <div class="row"><span class="label grow">Play online</span>${qTip('Friends join with the room code on their own phones. Empty seats become computers when you start. Free, no account.')}</div>
       <div class="row"><input class="txt grow" id="in-name" maxlength="20" placeholder="Your name" value="${esc(st.name)}" autocomplete="off"><button class="btn" id="btn-create">Create room</button></div>
-      <div class="row"><input class="txt code grow" id="in-code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters"><button class="btn" id="btn-join">Join</button></div>
+      <div class="row"><input class="txt code grow" id="in-code" maxlength="9" placeholder="CODE" autocomplete="off" autocapitalize="characters"><button class="btn" id="btn-join">Join</button></div>
     </div>
   </div>`;
   v.querySelectorAll('#seg-n button').forEach(b => b.onclick = () => {
@@ -270,7 +303,7 @@ async function createOnlineRoom() {
 }
 async function joinOnlineRoom(code) {
   const name = needName(); if (!name) return;
-  code = String(code || '').trim().toUpperCase();
+  code = String(code || '').replace(/\s+/g, '').toUpperCase();
   if (code.length !== 5) { toast('Room codes have 5 characters.'); return; }
   closeRoom(); ui.mode = 'online'; snap = { status: 'joining' }; renderPlay();
   try {
@@ -290,10 +323,14 @@ async function leaveOnline() {
 
 function renderLobby(v) {
   const s = snap;
+  // each seat's picked monster, the same way the engine assigns them at the start
+  const picks = (s.options && s.options.monsters) || [], used = new Set();
+  const mons = s.seats.map((x, i) => (Number.isInteger(picks[i]) && picks[i] >= 0 && picks[i] < 6 ? picks[i] : i));
+  for (let i = 0; i < mons.length; i++) { if (used.has(mons[i])) mons[i] = [0, 1, 2, 3, 4, 5].find(m => !used.has(m)); used.add(mons[i]); }
   const rows = s.seats.map((x, i) => {
     const label = x.kind === 'human' ? esc(x.name || 'Player') + (i === s.mySeat ? ' (you)' : '') + (x.isHost ? ' · host' : '') : x.kind === 'computer' ? 'Computer' : '<span class="muted">Open seat</span>';
     const ctrl = s.isHost && x.kind !== 'human' ? `<button class="btn small" data-seat="${i}" data-to="${x.kind === 'computer' ? 'empty' : 'computer'}">${x.kind === 'computer' ? 'Open it' : 'Computer'}</button>` : '';
-    return `<div class="seatrow">${Art.monster(i, 30)}<span class="nmx">${label}</span>${ctrl}</div>`;
+    return `<div class="seatrow">${Art.monster(mons[i], 30)}<span class="nmx">${label}</span>${ctrl}</div>`;
   }).join('');
   v.innerHTML = `<div class="setup">
     <div class="panel" style="align-items:center;text-align:center">
@@ -305,7 +342,10 @@ function renderLobby(v) {
       <button class="btn ghost" id="btn-leave">Leave room</button></div>
   </div>`;
   v.querySelectorAll('button[data-seat]').forEach(b => b.onclick = () => room.setSeat(+b.dataset.seat, b.dataset.to));
-  if ($('#btn-start')) $('#btn-start').onclick = async () => { const r = await room.start(); if (!r.ok) toast(r.message); };
+  if ($('#btn-start')) $('#btn-start').onclick = async e => {
+    const b = e.currentTarget; if (b.disabled) return; b.disabled = true;
+    const r = await room.start(); if (!r.ok) { toast(r.message); b.disabled = false; }
+  };
   $('#btn-leave').onclick = () => leaveOnline();
 }
 
@@ -325,7 +365,13 @@ function renderGame(v) {
   // a new roll: kept dice from the engine become the starting keep selection
   const rollKey = t ? pub.turnNo + ':' + t.rollId : null;
   const newRoll = rollKey !== ui.lastRoll;
-  if (newRoll) { ui.keep = new Set(t ? t.dice.map((d, k) => (d.k ? k : -1)).filter(k => k >= 0) : []); ui.change = null; }
+  if (newRoll) {
+    // after a reload, the dice you had raised for this same roll come back
+    const ks = store.keepSel;
+    if (ks && ks.key === rollKey && Array.isArray(ks.keep) && t) ui.keep = new Set(ks.keep.filter(k => Number.isInteger(k) && k >= 0 && k < t.dice.length));
+    else ui.keep = new Set(t ? t.dice.map((d, k) => (d.k ? k : -1)).filter(k => k >= 0) : []);
+    ui.change = null;
+  }
   const rolledNow = newRoll && t ? new Set(t.rolledIdx) : new Set();
   ui.lastRoll = rollKey;
 
@@ -601,6 +647,7 @@ function wireGame(v, pub, me, ask) {
     if (ask !== 'roll') return;
     if (ui.change) { facePicker(k, ui.change); return; }
     if (ui.keep.has(k)) ui.keep.delete(k); else ui.keep.add(k);
+    store.keepSel = { key: ui.lastRoll, keep: [...ui.keep] }; save();
     renderPlay();
   });
   v.querySelectorAll('[data-chg]').forEach(b => b.onclick = () => { ui.change = b.dataset.chg; toast('Tap the die to change'); renderPlay(); });
@@ -818,7 +865,7 @@ function renderOdds() {
       <div class="row"><span class="grow small">Rerolls left</span><div class="seg" style="width:150px">${[0, 1, 2].map(r => `<button data-r="${r}" aria-pressed="${oz.r === r}">${r}</button>`).join('')}</div></div>
       <div class="row"><span class="grow small">Dice</span>${step('n', n)}<span class="grow small" style="text-align:right">Health</span>${step('hp', oz.hp)}</div>
       <div class="row"><span class="grow small">I'm in Tokyo</span><label class="switch"><input type="checkbox" id="oz-tokyo" ${oz.tokyo ? 'checked' : ''}><span></span></label></div>
-      <div class="row small"><span class="grow">Best keep is worth</span><b>${adv ? fmt1(adv.ev) : '–'} pts</b></div>
+      <div class="row small"><span class="grow">${oz.r ? 'Best keep is worth' : 'These dice are worth'}</span><b>${adv ? fmt1(Math.max(0, adv.ev)) : '–'} pts</b></div>
     </div>
     <div class="panel scroll">
       <span class="label">Chances if you chase it</span>
@@ -879,7 +926,7 @@ function renderSettings() {
     <div class="panel"><div class="row"><span class="label grow">Card deck</span>${qTip('Both decks have the same 66 cards. 2016 renamed 8 of them, made Battery Monster cost 3, lets cards add claws, and always sends the first monster into an empty Tokyo. Takes effect in your next game.')}</div>${seg('edition', [['2016', '2016 edition'], ['2011', '2011 edition']])}</div>
     <div class="panel">
       <div class="setrow"><div class="grow"><b>Tokyo Bay</b><span>Second Tokyo spot with 5–6 monsters</span></div><label class="switch"><input type="checkbox" data-sw="bay" ${st.bay ? 'checked' : ''}><span></span></label></div>
-      <div class="setrow"><div class="grow"><b>Two-player variant</b><span>With 2 monsters, Tokyo pays energy instead of points</span></div><label class="switch"><input type="checkbox" data-sw="duel" ${st.duel ? 'checked' : ''}><span></span></label></div>
+      <div class="setrow"><div class="grow"><b>Two-player variant</b><span>With 2 monsters, Tokyo pays energy instead of points${st.edition === '2011' ? ' · 2016 deck only' : ''}</span></div><label class="switch"><input type="checkbox" data-sw="duel" ${st.duel && st.edition !== '2011' ? 'checked' : ''} ${st.edition === '2011' ? 'disabled' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Best-keep dots</b><span>Green dot under the best dice to keep</span></div><label class="switch"><input type="checkbox" data-sw="hints" ${st.hints ? 'checked' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Computer speed</b></div><div style="width:170px">${seg('speed', [['normal', 'Normal'], ['fast', 'Fast']])}</div></div>
     </div>

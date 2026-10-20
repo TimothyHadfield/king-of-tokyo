@@ -18,6 +18,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | Online rooms (createOnline, gameId `king-of-tokyo`) | Done; `tests/two-browsers.mjs` (two WebKit browsers: create, join by code, reload mid-game, both end identical) passed |
 | Measured strength (400 games each vs three Mediums) | Easy 4.8%, Medium 23.5%, Hard 39%; Hard beats Easy 68% one-on-one |
 | Screen tests | `tests/ui-play.mjs`: full games at 393 px WebKit (incl. 6 monsters + reload) and 1280 px Chromium, no console errors, no overflow |
+| QA pass 1 fixes (2026-10-20) | Done; `tests/ui-fixes.mjs` (14 checks, all seen failing on the old build): double-tap guard, broken-save restore, lobby monsters, 2-player switch off on 2011, Back closes sheet, code with spaces, single toasts, kept dice after reload, Join above the fold at 6, Odds at 0 rerolls |
 | Own SVG art (6 monsters, dice faces, card icons, skyline) | Done |
 
 ## Authorized next steps
@@ -32,6 +33,8 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 - `Cards.CARDS` is a live table for ONE edition; the app calls `syncEd()` before rendering. Engine and bots use `Cards.card(s.edition, id)`.
 - The keep solver lets you reroll any die every time (KoT rule); a brute force that locks kept dice gives a different (wrong) answer.
 - `?botms=40` in the URL speeds the computers up for screen tests.
+- Tap guard (app.js, top): drops a 2nd tap within 450 ms at the same spot only if the first tap's element was redrawn (or a sheet opened). A blanket time guard broke fast test clicks on other buttons; don't go back to that.
+- `js/online.js` is a copy of the shared `_online` module; when the shared seat fix lands, re-copy it unchanged and rerun `tests/two-browsers.mjs`.
 - Worktrees go in `C:/Users/timha/AppData/Local/Temp/claude/wt/`, never under `.claude`.
 
 ## Decisions

@@ -6,3 +6,4 @@
 - **Built**: engine (step queue, both editions, 66 cards each), exact keep solver, Easy/Medium/Hard computers, odds at each decision (best keep, KO risk, stay value, card win %), Odds/Cards/Settings tabs, online via shared `_online`, own SVG art, icons.
 - **Verified**: 37 engine tests + 6 online checks (seen failing on a broken engine); full screen games at 393 px WebKit and 1280 px Chromium; 6-monster game with reload; two-browser online room with reload; measured levels (`tools/measure-levels.js 400 1500`).
 - **Open**: see progress.md NOT verified (card wording sources, Psychic Probe timing, real iPhone).
+- **QA pass** (fresh agent, live site) found 11 issues; all fixed the same day, with `tests/ui-fixes.mjs` seen failing on the old live build and passing on the fix. The 2-player variant is now disabled on the 2011 deck (rulebook variant is 2016).

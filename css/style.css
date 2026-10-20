@@ -65,6 +65,7 @@ nav.tabs .brand { display: none; }
 .switch span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch input:checked + span { background: var(--accent); }
 .switch input:checked + span::after { transform: translateX(20px); }
+.switch input:disabled + span { opacity: .4; cursor: default; }
 .scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
 .pct { font-variant-numeric: tabular-nums; font-weight: 750; }
 .num { font-variant-numeric: tabular-nums; }
@@ -238,6 +239,11 @@ ul.log li b { color: var(--text); font-weight: 650; }
 .seats { display: flex; flex-direction: column; gap: 5px; }
 .seatrow { display: flex; align-items: center; gap: 9px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 9px; padding: 3px 6px 3px 6px; font-size: 14px; min-height: 40px; }
 .seatrow svg { width: 30px; height: 30px; flex: none; }
+.seats.dense { gap: 3px; }
+.seats.dense .seatrow { min-height: 32px; padding: 1px 6px; }
+.seats.dense .btn.small { min-height: 30px; }
+.seats.dense [data-mon-pick] { height: 30px !important; }
+.seats.dense .seatrow svg { width: 26px; height: 26px; }
 .seatrow .nmx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 650; }
 .kindbtn { min-width: 98px; }
 @media (min-width: 900px) {

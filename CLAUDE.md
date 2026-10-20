@@ -13,7 +13,7 @@ Read `progress.md` first. Tim's global rules (`~/.claude/CLAUDE.md`) and the Cod
 - `docs/rules-check.md` source for every rule/count; `docs/ideas.md` data ideas, Build/Skip
 
 ## Commands
-- Tests: `node --test tests/engine.test.js` and `node tests/online.test.mjs`
+- Tests: `node --test tests/engine.test.js` and `node tests/online.test.mjs`; screens: `node tests/ui-fixes.mjs <url> [--online]` (QA regressions)
 - Screens: serve the folder (`python -m http.server 8614 --bind 127.0.0.1`), then `node tests/ui-play.mjs http://127.0.0.1:8614/ --botms 40 [--desktop] [--reload] [--shots dir]`
 - Measure: `node tools/measure-levels.js 400 1500` (about 5 minutes)
 
