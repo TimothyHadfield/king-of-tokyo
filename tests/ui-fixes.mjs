@@ -27,7 +27,7 @@ const fresh = async (store) => {
   await page.reload();
   await page.waitForSelector('#seg-n');
 };
-const snapInfo = () => page.evaluate(() => { const s = window.__kot.snap; return s && s.pub ? { ask: s.pub.ask && s.toAct.includes(s.mySeat) ? s.pub.ask.type : null, rerolls: s.pub.t ? s.pub.t.rerolls : null, turn: s.pub.turnNo, mine: s.pub.t && s.pub.t.seat === s.mySeat } : null; });
+const snapInfo = () => page.evaluate(() => { const s = window.__kot.snap; return s && s.pub ? { ask: s.pub.ask && s.toAct.includes(s.mySeat) ? s.pub.ask.type : null, rerolls: s.pub.t ? s.pub.t.rerolls : null, rollId: s.pub.t ? s.pub.t.rollId : null, turn: s.pub.turnNo, mine: s.pub.t && s.pub.t.seat === s.mySeat } : null; });
 const waitAsk = async (want, ms = 30000) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -37,7 +37,8 @@ const waitAsk = async (want, ms = 30000) => {
     if (s && s.ask && s.ask !== want) await page.evaluate(() => { const s = window.__kot.snap; window.__kot.act(window.KotBots.decide(s.pub, s.mySeat, 'medium', Math.random, s.mine || {})); });
     await page.waitForTimeout(80);
   }
-  throw new Error('never asked ' + want);
+  const dump = await page.evaluate(() => { const s = window.__kot.snap; return s && s.pub ? { status: s.status, over: s.pub.over, ask: s.pub.ask, toAct: s.toAct, me: s.mySeat, cur: s.pub.cur, hp: s.pub.players.map(p => p.hp), log: s.pub.log.slice(-6).map(l => l.s + ' ' + l.m), sheet: !!document.getElementById('sheet'), toast: (document.querySelector('.toast') || {}).textContent } : s; });
+  throw new Error('never asked ' + want + ': ' + JSON.stringify(dump));
 };
 const center = async sel => { const b = await page.locator(sel).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
 
@@ -54,23 +55,27 @@ for (let k = 0; k < 4; k++) {
   await page.touchscreen.tap(x, y); await page.waitForTimeout(120); await page.touchscreen.tap(x, y);
   await page.waitForTimeout(300);
   let s = await snapInfo();
-  if (s.ask === 'roll') { seenRoll++; if (s.rerolls !== 2) rollOk = false; }
-  if (s.ask === 'roll' && s.rerolls === 2) {
+  if (s.ask === 'roll') { seenRoll++; if (s.rollId !== 1) rollOk = false; }
+  if (s.ask === 'roll' && s.rollId === 1 && s.rerolls > 0) {
     await page.waitForTimeout(450);
     const [rx, ry] = await center('#btn-reroll');
     if (k % 2) await page.mouse.dblclick(rx, ry);
     else { await page.touchscreen.tap(rx, ry); await page.waitForTimeout(120); await page.touchscreen.tap(rx, ry); }
     await page.waitForTimeout(300);
     s = await snapInfo();
-    if (s.ask === 'roll') { seenReroll++; if (s.rerolls !== 1) rerollOk = false; }
+    if (s.ask === 'roll') { seenReroll++; if (s.rollId !== 2) rerollOk = false; }
   }
   // finish this turn
   await page.evaluate(() => { const s = window.__kot.snap; if (s.pub.ask && s.toAct.includes(s.mySeat) && s.pub.ask.type === 'roll') window.__kot.act({ t: 'done' }); });
 }
-check(rollOk && seenRoll >= 2, 'a double tap on Roll rolls once (2 rerolls left), ' + seenRoll + ' tries');
+check(rollOk && seenRoll >= 2, 'a double tap on Roll rolls once, ' + seenRoll + ' tries');
 check(rerollOk && seenReroll >= 2, 'a double tap / double-click on Reroll spends one reroll, ' + seenReroll + ' tries');
 
-// 2. kept dice survive a reload
+// 2. kept dice survive a reload (own game: the first one may already be over)
+await fresh();
+await page.click('#seg-n [data-n="2"]');
+await page.click('#btn-new');
+await page.waitForSelector('#game');
 await waitAsk('start');
 await page.click('#btn-roll');
 await waitAsk('roll');
