@@ -20,6 +20,7 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | Screen tests | `tests/ui-play.mjs`: full games at 393 px WebKit (incl. 6 monsters + reload) and 1280 px Chromium, no console errors, no overflow |
 | QA pass 1 fixes (2026-10-20) | Done; `tests/ui-fixes.mjs` (14 checks, all seen failing on the old build): double-tap guard, broken-save restore, lobby monsters, 2-player switch off on 2011, Back closes sheet, code with spaces, single toasts, kept dice after reload, Join above the fold at 6, Odds at 0 rerolls |
 | Own SVG art (6 monsters, dice faces, card icons, skyline) | Done |
+| Visual design pass (2026-10-20) | Done: phone sale cards get a faint icon watermark, readable "· N left" on Reroll, Sweep tile shows ⚡ 2 / Sweep, laptop Tokyo scene big + centred, dice 66 px, sale-card text no longer clipped, log 13 px, no "Gigazaur / Gigazaur" subtitle, no "You You reaches" in the log |
 
 ## Authorized next steps
 - (none pending from Tim)
