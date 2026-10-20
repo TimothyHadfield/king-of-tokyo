@@ -395,7 +395,7 @@ function renderGame(v) {
     if (!p.alive) cls.push('out');
     const where = pub.tokyo.city === i ? '<span class="where">CITY</span>' : pub.tokyo.bay === i ? '<span class="where bay">BAY</span>' : '';
     const tok = (p.poison ? ` · ☠ ${p.poison} poison` : '') + (p.shrink ? ` · ${p.shrink} shrink` : '') + (p.wings ? ' · Wings on' : '');
-    return `<div class="${cls.join(' ')}" data-mon="${i}"><div class="top">${Art.monster(p.mon, 40)}<div class="grow"><b>${esc(i === me && p.name !== 'You' ? p.name + ' (you)' : p.name)}</b><span>${monName(p.mon)}${tok}</span></div>${where}</div>
+    return `<div class="${cls.join(' ')}" data-mon="${i}"><div class="top">${Art.monster(p.mon, 40)}<div class="grow"><b>${esc(i === me && p.name !== 'You' ? p.name + ' (you)' : p.name)}</b><span>${((p.name === monName(p.mon) ? '' : monName(p.mon)) + tok).replace(/^ · /, '')}</span></div>${where}</div>
       <div class="meter" style="color:var(--hp)">${Art.icon('H', 13)}<div class="bar"><i style="width:${(p.hp / p.maxHp) * 100}%;background:var(--hp)"></i></div><span>${p.hp}/${p.maxHp}</span></div>
       <div class="meter" style="color:var(--vp)">${Art.icon('VP', 13)}<div class="bar"><i style="width:${Math.min(100, p.vp / 20 * 100)}%;background:var(--vp)"></i></div><span>${p.vp}/20</span></div>
       <div class="meter" style="color:var(--en)">${Art.icon('E', 13)}<span>${p.en} energy</span></div>
@@ -472,7 +472,7 @@ function renderGame(v) {
     if (fresh) cls.push('deal');
     if (canBuy && myP && myP.en >= cost && (ask === 'buy' || pub.ask.i === k)) cls.push('can');
     return cardFace(id, cls.join(' '), cost, `data-slot="${k}"`);
-  }).join('') + `<button class="sweep" id="btn-sweep" ${ask === 'buy' && myP.en >= 2 ? '' : 'disabled'}>${Art.icon('E', 14)}<span>2 · Sweep</span></button>`;
+  }).join('') + `<button class="sweep" id="btn-sweep" ${ask === 'buy' && myP.en >= 2 ? '' : 'disabled'}>${Art.icon('E', 14)}<b>2</b><span>Sweep</span></button>`;
   ui.marketSeen = pub.market.slice();
 
   // ---- actions
@@ -519,7 +519,7 @@ function cardFace(id, cls, cost, attrs) {
   const c = CARDS[id];
   const kind = Art.cardKind(id);
   return `<button class="${cls}" ${attrs || ''}><span class="band" style="background:${kind === 'D' ? '#39405a' : '#2a2f3f'}"><span class="ic">${Art.cardIcon(id, 16)}</span>${costTag(cost == null ? c.cost : cost)}</span>
-    <span class="nm">${esc(c.name)}</span><span class="tx">${esc(c.text)}</span><span class="ty">${c.keep ? 'KEEP' : 'DISCARD'}</span></button>`;
+    <span class="nm">${esc(c.name)}</span><span class="tx">${esc(c.text)}</span><span class="wm${kind === 'D' ? ' d' : ''}">${Art.cardIcon(id, 32)}</span><span class="ty">${c.keep ? 'KEEP' : 'DISCARD'}</span></button>`;
 }
 
 function abilities(pub, me, ask) {
@@ -593,7 +593,7 @@ function oddsBar(pub, me, ask) {
 }
 
 function logList(pub, me, n) {
-  return pub.log.slice(-n).map(l => `<li class="${l.s === me ? 'me' : ''}">${l.s >= 0 ? '<b>' + esc(l.s === me ? 'You' : pub.players[l.s].name) + '</b> ' : ''}${esc(l.m)}</li>`).join('');
+  return pub.log.slice(-n).map(l => `<li class="${l.s === me ? 'me' : ''}">${l.s >= 0 && !l.m.startsWith(pub.players[l.s].name + ' ') ? '<b>' + esc(l.s === me ? 'You' : pub.players[l.s].name) + '</b> ' : ''}${esc(l.m)}</li>`).join('');
 }
 
 function floats(pub) {
