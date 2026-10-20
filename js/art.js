@@ -14,11 +14,12 @@
     VP: '<path d="M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17l-5.9 3.3 1.3-6.5L2.5 9.3l6.6-.8z" fill="#f0b354" stroke="#7a5512" stroke-width="1" stroke-linejoin="round"/>',
   };
   const NUMCOL = '#e9edf5';
-  function face(f, size) {
+  // ink: one colour for every face, like the real dice (green symbols engraved on black)
+  function face(f, size, ink) {
     size = size || 24;
     let inner;
-    if (f === '1' || f === '2' || f === '3') inner = `<text x="12" y="17.6" text-anchor="middle" font-size="17" font-weight="800" font-family="system-ui,-apple-system,Segoe UI,sans-serif" fill="${NUMCOL}">${f}</text>`;
-    else inner = SYM[f];
+    if (f === '1' || f === '2' || f === '3') inner = `<text x="12" y="18.4" text-anchor="middle" font-size="${ink ? 19 : 17}" font-weight="900" font-family="system-ui,-apple-system,Segoe UI,sans-serif" fill="${ink || NUMCOL}">${f}</text>`;
+    else inner = ink ? SYM[f].replace(/fill="#[0-9a-f]{6}"/gi, `fill="${ink}"`).replace(/stroke="#[0-9a-f]{6}"/gi, 'stroke="rgba(0,0,0,.35)"') : SYM[f];
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${inner}</svg>`;
   }
   function icon(k, size) { return `<svg viewBox="0 0 24 24" width="${size || 16}" height="${size || 16}" aria-hidden="true">${SYM[k]}</svg>`; }
@@ -96,6 +97,22 @@
       <path d="M${w * 0.62} ${h} V${h * 0.18} M${w * 0.62 - 6} ${h} L${w * 0.62} ${h * 0.18} L${w * 0.62 + 6} ${h}" stroke="${c}" stroke-width="2.4" fill="none"/></svg>`;
   }
 
+  // ------------------------------------------------------------ the printed Tokyo board (our own drawing: sunset city over the bay)
+  function boardArt() {
+    let x = 0, d = '', k = 0;
+    const blocks = [[22, .5], [14, .68], [26, .42], [12, .82], [20, .58], [16, .36], [28, .7], [12, .48], [22, .62], [14, .4], [24, .55], [12, .76], [20, .45]];
+    while (x < 400) { const [bw, bh] = blocks[k++ % blocks.length]; const top = 150 - bh * 110; d += `<rect x="${x}" y="${top.toFixed(1)}" width="${bw - 2}" height="${(160 - top).toFixed(1)}"/>`; x += bw; }
+    let win = ''; // lit windows
+    for (let i = 0; i < 70; i++) { const wx = (i * 37) % 396, wy = 70 + ((i * 53) % 78); win += `<rect x="${wx}" y="${wy}" width="3" height="4"/>`; }
+    return `<svg class="bart" viewBox="0 0 400 200" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs><linearGradient id="kb-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a2a6e"/><stop offset=".45" stop-color="#d9583c"/><stop offset=".8" stop-color="#f7a446"/></linearGradient>
+      <linearGradient id="kb-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f78b8"/><stop offset="1" stop-color="#173a6a"/></linearGradient></defs>
+      <rect width="400" height="200" fill="url(#kb-sky)"/><circle cx="300" cy="96" r="34" fill="#ffd27a" opacity=".85"/>
+      <g fill="#2a1534">${d}</g><g fill="#ffd27a" opacity=".55">${win}</g>
+      <path d="M248 160V40M240 160l8-120 8 120M243 100h10M241 125h14" stroke="#2a1534" stroke-width="4" fill="none"/>
+      <rect y="152" width="400" height="48" fill="url(#kb-sea)"/><path d="M0 162q20-5 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0M0 180q20-5 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0" stroke="#8fc3ec" stroke-width="2" fill="none" opacity=".5"/></svg>`;
+  }
+
   // ------------------------------------------------------------ card icons by what the card does
   const CARD_ICON = {
     VP: ['apartment-building', 'commuter-train', 'corner-store', 'skyscraper', 'dedicated-news-team', 'alpha-monster', 'herbivore', 'gourmet', 'omnivore', 'complete-destruction', 'eater-of-the-dead', 'energy-hoarder', 'rooting-for-the-underdog', 'evacuation-orders', 'urbavore', 'amusement-park', 'nuclear-power-plant', 'tanks', 'jet-fighters', 'national-guard', 'death-from-above', 'drop-from-high-altitude', 'army'],
@@ -115,5 +132,5 @@
   const KIND_COL = { VP: '#f0b354', E: '#f4c542', H: '#ef5468', C: '#c9c1ad' };
   const cardKind = id => ICON_OF[id] || 'D';
 
-  return { face, icon, monster, skyline, cardIcon, cardKind, KIND_COL, SYM };
+  return { face, icon, monster, skyline, boardArt, cardIcon, cardKind, KIND_COL, SYM };
 });

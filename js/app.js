@@ -86,6 +86,7 @@ document.addEventListener('click', e => {
   g.t = now; g.x = e.clientX; g.y = e.clientY; g.el = tgt;
 }, true);
 function costTag(n) { return `<span class="cost">${Art.icon('E', 14)}${n}</span>`; }
+const DIE_INK = '#5fd36e'; // the real dice: green symbols on black
 const monName = i => MONSTERS[i] ? MONSTERS[i].name : 'Monster';
 
 // ? popovers
@@ -193,13 +194,29 @@ function onSnap(s) {
     else store.saved = { state: room.state, kinds: room.state.players.map(p => p.kind) };
     save();
   }
+  try { trackDiscards(prev, s.pub); } catch (e) { /* the pile is decoration */ }
+  const was = ui.tab === 'play' ? grabMarket() : [];
   if (ui.tab === 'play') renderPlay();
-  fxReact(prev, s);
+  fxReact(prev, s, was);
+}
+// where each market card sat before a redraw, so a bought card can glide from there
+function grabMarket() {
+  return [...document.querySelectorAll('#v-play #market [data-slot]')].map(el => ({ id: el.dataset.id, slot: +el.dataset.slot, r: el.getBoundingClientRect(), html: el.outerHTML }));
+}
+// a card copy appears where the old card lay and slides to `to`
+function glide(old, to) {
+  const T = window.TABLE;
+  if (!T || !old || !to || !T.animOn()) return;
+  const g = document.createElement('div'); g.innerHTML = old.html; const c = g.firstElementChild;
+  c.classList.remove('deal', 'can'); c.style.cssText = `position:fixed;left:${old.r.left}px;top:${old.r.top}px;width:${old.r.width}px;height:${old.r.height}px;margin:0;z-index:30;pointer-events:none`;
+  document.body.appendChild(c);
+  T.slide(c, to, { duration: Math.round(420 * fxSp()) }).then(() => c.remove(), () => c.remove());
+  c.style.visibility = 'hidden';
 }
 
 // sounds + animations for what changed between two snapshots (every mode: computers and online players too)
 const monEls = i => [...document.querySelectorAll(`#v-play [data-mon="${i}"].mon, #v-play [data-mon="${i}"].pboard`)].filter(e => e.offsetParent !== null);
-function fxReact(prev, s) {
+function fxReact(prev, s, was) {
   if (!s || !s.pub) return;
   const pub = s.pub, me = s.mySeat;
   let evs = [];
@@ -226,7 +243,11 @@ function fxReact(prev, s) {
       if (was != null && was < now) monEls(x.s).forEach(el => { const n = el.querySelector(`[data-n="${k}"]`); if (n) FX.countUp(n, was, now, { duration: 500 }); });
       if (k === 'vp' && x.s === me && x.n >= 3) big = monEls(me)[0] || board;
     }
-    else if (x.e === 'buy') { monEls(x.s).forEach(el => FX.pop(el)); if (x.s === me) { const c = [...document.querySelectorAll('#v-play .mine .chipcard[data-card]')].pop(); if (c) FX.pop(c); } }
+    else if (x.e === 'buy') {
+      const o = (was || []).find(w => w.id === x.id), dest = x.s === me ? ($('#v-play .myarea .mine') || monEls(x.s)[0]) : monEls(x.s)[0];
+      if (o) glide(o, dest);
+      monEls(x.s).forEach(el => FX.pop(el)); if (x.s === me) { const c = [...document.querySelectorAll('#v-play .mine .chipcard[data-card]')].pop(); if (c) FX.pop(c); } }
+    else if (x.e === 'sweep') { const dp = $('#dpile'); (was || []).forEach(o => glide(o, dp)); }
     else if (x.e === 'turn' && x.mine) { const b = $('#btn-roll'); if (b) FX.pulse(b); }
     else if (x.e === 'ask') { const b = $('#v-play .acts .btn.primary, #v-play .acts .btn.warm'); if (b) FX.pulse(b); }
   }
@@ -429,40 +450,40 @@ function renderGame(v) {
   const rolledNow = newRoll && t ? new Set(t.rolledIdx) : new Set();
   ui.lastRoll = rollKey;
 
-  // ---- monsters strip (phone) and boards (laptop)
-  const chips = P.map((p, i) => {
-    const cls = ['mon'];
+  // ---- seats: each monster's board (portrait, heart dial, star dial), its energy cubes and its keep cards,
+  // laid out like the real table: the others across the far side, yours at the bottom edge
+  const seat = i => {
+    const p = P[i], cls = ['mon', 'seat'];
+    if (i === me) cls.push('me');
     if (pub.cur === i && !pub.over) cls.push('turn');
     if (pub.tokyo.city === i) cls.push('tokyo');
     if (pub.tokyo.bay === i) cls.push('tokyo', 'bay');
     if (!p.alive) cls.push('out');
     if (pub.ask && pub.ask.waiting.includes(i) && pub.cur !== i) cls.push('wait');
-    const tok = (p.poison ? '☠' + p.poison : '') + (p.shrink ? ' ↓' + p.shrink : '');
-    return `<div class="${cls.join(' ')}" data-mon="${i}">${tok ? `<span class="tok">${tok}</span>` : ''}<span class="av">${playerFace(p, i)}</span>
-      <span class="nmx">${esc(i === me ? 'You' : p.name)}</span>
-      <span class="st"><span style="color:var(--hp)">${Art.icon('H', 11)}<span data-n="hp">${p.hp}</span></span><span style="color:var(--vp)">${Art.icon('VP', 11)}<span data-n="vp">${p.vp}</span></span></span>
-      <span class="st"><span style="color:var(--en)">${Art.icon('E', 11)}<span data-n="en">${p.en}</span></span>${p.cards.length ? `<span class="muted" style="font-size:10.5px">${p.cards.length}▤</span>` : ''}</span></div>`;
-  }).join('');
-  const boards = P.map((p, i) => {
-    const cls = ['pboard'];
-    if (pub.cur === i && !pub.over) cls.push('turn');
-    if (!p.alive) cls.push('out');
+    const col = MONSTERS[p.mon] ? MONSTERS[p.mon].color : '#888';
+    const toks = (p.poison ? `<span class="tok poison" title="Poison">☠${p.poison > 1 ? p.poison : ''}</span>` : '') + (p.shrink ? `<span class="tok shrink" title="Shrink">↓${p.shrink > 1 ? p.shrink : ''}</span>` : '');
     const where = pub.tokyo.city === i ? '<span class="where">CITY</span>' : pub.tokyo.bay === i ? '<span class="where bay">BAY</span>' : '';
-    const tok = (p.poison ? ` · ☠ ${p.poison} poison` : '') + (p.shrink ? ` · ${p.shrink} shrink` : '') + (p.wings ? ' · Wings on' : '');
-    return `<div class="${cls.join(' ')}" data-mon="${i}"><div class="top">${Art.monster(p.mon, 40)}<div class="grow"><b>${esc(i === me && p.name !== 'You' ? p.name + ' (you)' : p.name)}</b><span>${((p.name === monName(p.mon) ? '' : monName(p.mon)) + tok).replace(/^ · /, '')}</span></div>${where}</div>
-      <div class="meter" style="color:var(--hp)">${Art.icon('H', 13)}<div class="bar"><i style="width:${(p.hp / p.maxHp) * 100}%;background:var(--hp)"></i></div><span>${p.hp}/${p.maxHp}</span></div>
-      <div class="meter" style="color:var(--vp)">${Art.icon('VP', 13)}<div class="bar"><i style="width:${Math.min(100, p.vp / 20 * 100)}%;background:var(--vp)"></i></div><span>${p.vp}/20</span></div>
-      <div class="meter" style="color:var(--en)">${Art.icon('E', 13)}<span>${p.en} energy</span></div>
-      ${p.cards.length ? `<div class="cards">${p.cards.map(c => `<span class="chipcard" data-card="${c.id}" data-k="${c.k}">${esc(CARDS[c.id].name)}${c.c != null ? ' ·' + c.c : ''}${c.as ? ' → ' + esc(CARDS[c.as].name) : ''}</span>`).join('')}</div>` : ''}</div>`;
-  }).join('');
+    // phone: a tiny face-up fan in the board's corner (one little card per keep card, tinted by kind); laptop: readable mini cards
+    const fan = p.cards.slice(0, 6).map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).join('');
+    const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}</span>${p.cards.length ? `<span class="ncards" aria-label="${p.cards.length} cards">${fan}${p.cards.length > 6 ? `<b>${p.cards.length}</b>` : ''}</span>` : ''}`;
+    return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col}">
+      <div class="mboard">${where}<span class="av">${playerFace(p, i)}</span><span class="nmx">${esc(i === me ? (p.name === 'You' ? 'You' : p.name) : p.name)}</span>
+        <span class="dial hp">${Art.icon('H', 12)}<b data-n="hp">${p.hp}</b></span><span class="dial vp">${Art.icon('VP', 12)}<b data-n="vp">${p.vp}</b></span></div>
+      <span class="cubes"><i class="cube"></i>${p.en > 1 ? '<i class="cube c2"></i>' : ''}${p.en > 4 ? '<i class="cube c3"></i>' : ''}<b data-n="en">${p.en}</b></span>${toks}${cards}</div>`;
+  };
+  const opps = P.map((p, i) => i).filter(i => i !== me).map(seat).join('');
 
-  // ---- Tokyo board
+  // ---- Tokyo board: printed city, a standee on each occupied spot
+  // the standee stomps in only when a monster enters (not on every redraw); its numbers live on its own board
+  const seenTk = ui.tokyoSeen || {};
   const spot = (which) => {
     const i = pub.tokyo[which];
-    const occ = i >= 0 ? `<div class="occ" data-mon="${i}">${Art.monster(P[i].mon, 58)}<div style="min-width:0"><b>${esc(i === me ? 'You' : P[i].name)}</b><span>${Art.icon('H', 12)} ${P[i].hp} · ${Art.icon('VP', 12)} ${P[i].vp}</span></div></div>` : `<div class="empty">Empty</div>`;
+    const enter = seenTk[which] !== undefined && seenTk[which] !== i ? ' enter' : '';
+    const occ = i >= 0 ? `<div class="occ${enter}" data-mon="${i}"><span class="standee">${Art.monster(P[i].mon, 58)}</span><div class="plate"><b>${esc(i === me ? 'You' : P[i].name)}</b></div></div>` : `<div class="empty">Empty</div>`;
     return `<div class="spot ${which}"><span class="tag">TOKYO ${which === 'city' ? 'CITY' : 'BAY'}</span>${occ}</div>`;
   };
-  const board = `<div class="board">${Art.skyline(400, 80)}${spot('city')}${pub.bayRule && (pub.bayOpen || pub.tokyo.bay >= 0) ? spot('bay') : ''}</div>`;
+  const board = `<div class="board">${Art.boardArt()}${spot('city')}${pub.bayRule && (pub.bayOpen || pub.tokyo.bay >= 0) ? spot('bay') : ''}</div>`;
+  ui.tokyoSeen = { city: pub.tokyo.city, bay: pub.tokyo.bay };
 
   // ---- status line
   let who = '', sub = '';
@@ -500,33 +521,37 @@ function renderGame(v) {
       if (hint.has(k)) cls.push('hint');
       if (rolledNow.has(k)) cls.push('roll');
       if (ask === 'probe' || ui.change) cls.push('pick');
-      return `<button class="${cls.join(' ')}" data-die="${k}" style="animation-delay:${rolledNow.has(k) ? Math.round(k * 40 * fxSp()) : 0}ms" aria-label="${d.f}">${Art.face(d.f)}</button>`;
+      // each die lands at its own slight angle, like dice thrown on a table (fixed per roll so it doesn't wobble on redraws)
+      const tilt = ((k * 7 + (t.rollId || 0) * 5 + pub.turnNo * 3) % 11) - 5;
+      return `<button class="${cls.join(' ')}" data-die="${k}" style="--tilt:${tilt}deg;animation-delay:${rolledNow.has(k) ? Math.round(k * 40 * fxSp()) : 0}ms" aria-label="${d.f}">${Art.face(d.f, 24, DIE_INK)}</button>`;
     }).join('');
   } else if (curP) {
     const n = 6;
-    dice = Array.from({ length: n }, () => `<span class="die ghost">${Art.face('1')}</span>`).join('');
+    dice = Array.from({ length: n }, () => `<span class="die ghost">${Art.face('1', 24, DIE_INK)}</span>`).join('');
   }
 
   // ---- odds bar
   const odds = oddsBar(pub, me, ask);
 
-  // ---- my cards row
+  // ---- my keep cards, laid face up in front of me
   const myP = P[me];
   const abil = abilities(pub, me, ask);
-  const mine = (myP ? myP.cards.map(c => `<span class="chipcard${abil.ids.has(c.id) ? ' ab' : ''}" data-card="${c.id}" data-k="${c.k}">${esc(CARDS[c.id].name)}${c.c != null ? ' ·' + c.c : ''}${c.as ? ' → ' + esc(CARDS[c.as].name) : ''}</span>`).join('') : '')
-    + abil.html + (snap.mine && snap.mine.top && ask === 'buy' ? `<span class="chipcard ab" data-top="1">Top: ${esc(CARDS[snap.mine.top].name)}</span>` : '');
+  const mine = (myP ? myP.cards.map(c => miniCard(c, abil.ids.has(c.id) ? 'ab' : '')).join('') : '')
+    + abil.html + (snap.mine && snap.mine.top && ask === 'buy' ? `<span class="chipcard mini ab top" data-top="1"><span class="nm">Top: ${esc(CARDS[snap.mine.top].name)}</span></span>` : '');
 
-  // ---- market
+  // ---- market: draw deck, three face-up cards, discard pile
   const canBuy = ask === 'buy' || ask === 'opp';
-  const market = pub.market.map((id, k) => {
-    if (!id) return '<div></div>';
-    const cost = myP ? E.costFor(pub, me, id) : CARDS[id].cost;
-    const fresh = ui.marketSeen[k] !== id;
-    const cls = ['pc', CARDS[id].keep ? 'K' : 'D'];
-    if (fresh) cls.push('deal');
-    if (canBuy && myP && myP.en >= cost && (ask === 'buy' || pub.ask.i === k)) cls.push('can');
-    return cardFace(id, cls.join(' '), cost, `data-slot="${k}"`);
-  }).join('') + `<button class="sweep" id="btn-sweep" ${ask === 'buy' && myP.en >= 2 ? '' : 'disabled'}>${Art.icon('E', 14)}<b>2</b><span>Sweep</span></button>`;
+  const market = `<div class="mcol"><div class="deck" id="deck" aria-label="${pub.deckSize} cards in the deck"></div><button class="sweep" id="btn-sweep" ${ask === 'buy' && myP && myP.en >= 2 ? '' : 'disabled'}>${Art.icon('E', 13)}<b>2</b><span>Sweep</span></button></div>`
+    + pub.market.map((id, k) => {
+      if (!id) return '<div class="slot tbl-spot"></div>';
+      const cost = myP ? E.costFor(pub, me, id) : CARDS[id].cost;
+      const fresh = ui.marketSeen[k] !== id;
+      const cls = ['pc', CARDS[id].keep ? 'K' : 'D'];
+      if (fresh) cls.push('deal');
+      if (canBuy && myP && myP.en >= cost && (ask === 'buy' || pub.ask.i === k)) cls.push('can');
+      return cardFace(id, cls.join(' '), cost, `data-slot="${k}" data-id="${id}"`);
+    }).join('') + `<div class="mcol"><div class="dpile" id="dpile" aria-label="${pub.discardSize} cards in the discard pile"></div></div>`;
+  const dealt = pub.market.map((id, k) => (id && ui.marketSeen[k] !== id && ui.marketSeen.length ? k : -1)).filter(k => k >= 0);
   ui.marketSeen = pub.market.slice();
 
   // ---- actions
@@ -535,30 +560,34 @@ function renderGame(v) {
   // ---- log
   const logHtml = logList(pub, me, 40);
 
-  v.innerHTML = `<div id="game">
-    <div class="mons">${chips}</div>
-    <div class="plist">${boards}</div>
+  v.innerHTML = `<div id="game" class="tbl-surface tbl-wood-dark">
+    <div class="opps${P.length - (P[me] ? 1 : 0) >= 5 ? ' many' : ''}">${opps}</div>
     ${board}
+    <div class="market" id="market">${market}</div>
     <div class="status"><div class="grow" style="min-width:0"><div class="who">${who}</div></div><span class="sub">${sub}</span>
       <button class="icon-btn" id="btn-log" aria-label="Game log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
       <button class="icon-btn" id="btn-menu" aria-label="Game menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
     <div class="dice">${dice}</div>
     ${odds}
-    <div class="mine">${mine || '<span class="muted small">No cards yet</span>'}</div>
-    <div class="market" id="market">${market}</div>
+    <div class="myarea">${myP ? seat(me) : ''}<div class="mine">${mine || '<span class="nocards sr-only">No cards yet</span>'}</div></div>
     <div class="acts">${acts}</div>
     <div id="g-side"><div class="panel logbox"><span class="label">Log</span><div class="scroll" style="flex:1"><ul class="log">${logHtml}</ul></div></div></div>
   </div>`;
-  // laptop: market goes into the side column above the log
+  // the deck is a real stack (thinner as it's drawn), the discard pile a loose face-up heap
+  const T = window.TABLE;
+  if (T) {
+    T.deck($('#deck', v), pub.deckSize, { pattern: 'sunburst', cls: 'kback', badge: true, perCard: 0.2, max: 10 });
+    T.pile($('#dpile', v), discardFaces(pub), { seed: 'kot-discard', max: 4, rot: 12, off: 3 });
+  }
+  // laptop: the odds strip sits in the side panel above the log, off the table
   if (window.matchMedia('(min-width: 900px)').matches) {
-    const side = $('#g-side'), mk = $('#market');
-    const wrap = document.createElement('div'); wrap.className = 'panel'; wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
-    wrap.innerHTML = `<div class="row"><span class="label grow">Cards for sale</span><span class="muted small">${pub.deckSize} in deck</span></div>`;
-    wrap.appendChild(mk); side.insertBefore(wrap, side.firstChild);
+    const side = $('#g-side'), od = $('#game > .odds', v);
+    if (od) side.insertBefore(od, side.firstChild);
     const sc = side.querySelector('.logbox .scroll'); if (sc) sc.scrollTop = sc.scrollHeight;
   }
   wireGame(v, pub, me, ask);
   floats(pub);
+  dealIn(dealt);
   if (pub.over && !ui.endShown) { ui.endShown = true; setTimeout(() => showEnd(), 700); }
   // nothing left to do with the dice: resolve on its own
   if (ask === 'roll' && !t.opts.length && !abil.change) ui.autoDone = setTimeout(() => act({ t: 'done' }), 650);
@@ -569,11 +598,44 @@ function renderGame(v) {
 
 function safeAdvise(pub, me) { try { return Bots.advise(pub, me); } catch (e) { return null; } }
 
-function cardFace(id, cls, cost, attrs) {
+// a power card laid out like the real ones: cost top-left, name banner, picture, KEEP/DISCARD, rules text
+function cardFace(id, cls, cost, attrs, tag) {
   const c = CARDS[id];
   const kind = Art.cardKind(id);
-  return `<button class="${cls}" ${attrs || ''}><span class="band" style="background:${kind === 'D' ? '#39405a' : '#2a2f3f'}"><span class="ic">${Art.cardIcon(id, 16)}</span>${costTag(cost == null ? c.cost : cost)}</span>
-    <span class="nm">${esc(c.name)}</span><span class="tx">${esc(c.text)}</span><span class="wm${kind === 'D' ? ' d' : ''}">${Art.cardIcon(id, 32)}</span><span class="ty">${c.keep ? 'KEEP' : 'DISCARD'}</span></button>`;
+  tag = tag || 'button';
+  return `<${tag} class="${cls}" ${attrs || ''}><span class="cst">${Art.icon('E', 14)}<b>${cost == null ? c.cost : cost}</b></span><span class="nm${c.name.length > 16 ? ' long' : ''}">${esc(c.name)}</span>
+    <span class="art k${kind}">${Art.cardIcon(id, 40)}</span><span class="ty">${c.keep ? 'KEEP' : 'DISCARD'}</span><span class="tx">${esc(c.text)}</span></${tag}>`;
+}
+// a small keep card on the table in front of its owner (tap for the full card)
+function miniCard(c, extra) {
+  const d = CARDS[c.id];
+  return `<span class="chipcard mini${extra ? ' ' + extra : ''}" data-card="${c.id}" data-k="${c.k}" title="${esc(d.name)}"><span class="nm">${esc(d.name)}</span><span class="art k${Art.cardKind(c.id)}">${Art.cardIcon(c.id, 18)}</span>${c.as ? `<span class="as">${esc(CARDS[c.as].name)}</span>` : ''}${c.c != null ? `<span class="ctr">${c.c}</span>` : ''}</span>`;
+}
+// the discard pile: the cards this screen saw go there (the room shares only the count)
+function discardFaces(pub) {
+  const n = pub.discardSize || 0;
+  if (!n) { ui.discards = []; return []; }
+  const known = (ui.discards || []).filter(id => CARDS[id]).slice(-Math.min(4, n));
+  const out = [];
+  for (let k = known.length; k < Math.min(4, n); k++) out.push('<span class="tbl-card pc used"></span>');
+  return out.concat(known.map(id => cardFace(id, 'tbl-card pc pile ' + (CARDS[id].keep ? 'K' : 'D'), null, '', 'span')));
+}
+// cards that left the market or a monster's row and are nowhere now went to the discard pile
+function trackDiscards(prev, pub) {
+  if (!prev || !pub || !prev.market || !pub.market) return;
+  if (pub.discardSize < (prev.discardSize || 0)) ui.discards = [];
+  const count = arr => arr.reduce((m, id) => { if (id) m[id] = (m[id] || 0) + 1; return m; }, {});
+  const before = count(prev.market.concat(...prev.players.map(p => p.cards.map(c => c.id))));
+  const now = count(pub.market.concat(...pub.players.map(p => p.cards.map(c => c.id))));
+  const gone = [];
+  for (const id of Object.keys(before)) for (let k = (now[id] || 0); k < before[id]; k++) gone.push(id);
+  if (gone.length && pub.discardSize > (prev.discardSize || 0)) ui.discards = (ui.discards || []).concat(gone).slice(-8);
+}
+// a new market card flies off the deck and turns face up in its slot
+function dealIn(slots) {
+  const T = window.TABLE, dk = $('#deck');
+  if (!T || !dk || !slots.length) return;
+  slots.forEach((k, j) => { const to = document.querySelector(`#market [data-slot="${k}"]`); if (to) setTimeout(() => T.deal(dk, to, { duration: Math.round(320 * fxSp()) }), j * 90); });
 }
 
 function abilities(pub, me, ask) {
@@ -721,7 +783,7 @@ function wireGame(v, pub, me, ask) {
 
 function facePicker(k, via) {
   const faces = via === 'herd' ? ['1'] : D.FACES;
-  openSheet(`<h3>Change this die to…</h3><div class="facepick">${faces.map(f => `<button class="die" data-f="${f}">${Art.face(f)}</button>`).join('')}</div>
+  openSheet(`<h3>Change this die to…</h3><div class="facepick">${faces.map(f => `<button class="die" data-f="${f}">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>
     <button class="btn" id="btn-x">Cancel</button>`, el => {
     el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { closeSheet(); ui.change = null; act({ t: 'change', i: k, f: b.dataset.f, via }); });
     $('#btn-x', el).onclick = () => { closeSheet(); ui.change = null; renderPlay(); };
@@ -916,7 +978,7 @@ function renderOdds() {
   v.innerHTML = `<div class="oddsv">
     <div class="panel">
       <div class="row"><span class="label grow">Your dice</span>${qTip('Tap a die to change its face (works with your real dice at the table). The green dots show the keep with the most expected points: stars from sets, plus energy, hearts and claws valued for your situation.')}</div>
-      <div class="dice" id="oz-dice">${oz.faces.map((f, k) => `<button class="die${best.has(k) ? ' kept hint' : ''}" data-oz="${k}">${Art.face(f)}</button>`).join('')}</div>
+      <div class="dice" id="oz-dice">${oz.faces.map((f, k) => `<button class="die${best.has(k) ? ' kept hint' : ''}" data-oz="${k}">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>
       <div class="row"><span class="grow small">Rerolls left</span><div class="seg" style="width:150px">${[0, 1, 2].map(r => `<button data-r="${r}" aria-pressed="${oz.r === r}">${r}</button>`).join('')}</div></div>
       <div class="row"><span class="grow small">Dice</span>${step('n', n)}<span class="grow small" style="text-align:right">Health</span>${step('hp', oz.hp)}</div>
       <div class="row"><span class="grow small">I'm in Tokyo</span><label class="switch"><input type="checkbox" id="oz-tokyo" ${oz.tokyo ? 'checked' : ''}><span></span></label></div>
