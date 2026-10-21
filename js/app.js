@@ -444,6 +444,11 @@ function myAsk() {
 }
 function playerFace(p, i) { return p.alive ? Art.monster(p.mon, 30) : Art.monster(p.mon, 30, 'style="filter:grayscale(1)"'); }
 
+// the odds + log side panel shows only on wide laptops; below that the table takes the width
+// (the log is behind its button, as on the phone). Crossing the line redraws the table.
+const SIDE = window.matchMedia('(min-width: 1700px)');
+const onSide = () => { if (ui.tab === 'play' && snap && snap.pub) { ui.secHtml = null; renderPlay(); } };
+if (SIDE.addEventListener) SIDE.addEventListener('change', onSide); else if (SIDE.addListener) SIDE.addListener(onSide);
 function renderGame(v) {
   window.__kotRenders = (window.__kotRenders || 0) + 1;
   const pub = snap.pub, me = snap.mySeat, t = pub.t;
@@ -480,7 +485,7 @@ function renderGame(v) {
     const fanMax = P.length - (P[me] ? 1 : 0) >= 5 ? 2 : 6;
     const fan = p.cards.slice(0, fanMax).map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).join('');
     const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}</span>${p.cards.length ? `<span class="ncards" aria-label="${p.cards.length} cards">${fan}${p.cards.length > fanMax ? `<b>${p.cards.length}</b>` : ''}</span>` : ''}`;
-    return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col}">
+    return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col};--n:${Math.max(1, p.cards.length)}">
       <div class="mboard">${where}<span class="av">${playerFace(p, i)}</span><span class="nmx">${esc(i === me ? (p.name === 'You' ? 'You' : p.name) : p.name)}</span>
         <span class="dial hp">${Art.icon('H', 12)}<b data-n="hp">${p.hp}</b></span><span class="dial vp">${Art.icon('VP', 12)}<b data-n="vp">${p.vp}</b></span></div>
       <span class="cubes"><i class="cube"></i>${p.en > 1 ? '<i class="cube c2"></i>' : ''}${p.en > 4 ? '<i class="cube c3"></i>' : ''}<b data-n="en">${p.en}</b></span>${toks}${cards}</div>`;
@@ -496,7 +501,8 @@ function renderGame(v) {
     const occ = i >= 0 ? `<div class="occ${enter}" data-mon="${i}"><span class="standee">${Art.monster(P[i].mon, 58)}</span><div class="plate"><b>${esc(i === me ? 'You' : P[i].name)}</b></div></div>` : `<div class="empty">Empty</div>`;
     return `<div class="spot ${which}"><span class="tag">TOKYO ${which === 'city' ? 'CITY' : 'BAY'}</span>${occ}</div>`;
   };
-  const board = `<div class="board">${Art.boardArt()}${spot('city')}${pub.bayRule && (pub.bayOpen || pub.tokyo.bay >= 0) ? spot('bay') : ''}</div>`;
+  // the board keeps its real 2:1 shape, as big as its space allows (the wrapper measures the space)
+  const board = `<div class="bwrap"><div class="board">${Art.boardArt()}${spot('city')}${pub.bayRule && (pub.bayOpen || pub.tokyo.bay >= 0) ? spot('bay') : ''}</div></div>`;
   ui.tokyoSeen = { city: pub.tokyo.city, bay: pub.tokyo.bay };
 
   // ---- status line
@@ -550,8 +556,10 @@ function renderGame(v) {
   // ---- my keep cards, laid face up in front of me
   const myP = P[me];
   const abil = abilities(pub, me, ask);
+  // the ability buttons sit after the cards row, never scrolled off the screen by a long row
   const mine = (myP ? myP.cards.map(c => miniCard(c, abil.ids.has(c.id) ? 'ab' : '')).join('') : '')
-    + abil.html + (snap.mine && snap.mine.top && ask === 'buy' ? `<span class="chipcard mini ab top" data-top="1"><span class="nm">Top: ${esc(CARDS[snap.mine.top].name)}</span></span>` : '');
+    + (snap.mine && snap.mine.top && ask === 'buy' ? `<span class="chipcard mini ab top" data-top="1"><span class="nm">Top: ${esc(CARDS[snap.mine.top].name)}</span></span>` : '');
+  const nMine = (myP ? myP.cards.length : 0) + (snap.mine && snap.mine.top && ask === 'buy' ? 1 : 0);
 
   // ---- market: draw deck, three face-up cards, discard pile
   const canBuy = ask === 'buy' || ask === 'opp';
@@ -576,8 +584,8 @@ function renderGame(v) {
 
   // only the parts of the table that changed are drawn again (a full redraw repainted the whole wooden
   // table on every tap: about 4x slower than before the table look in Safari's engine, measured)
-  const wide = window.matchMedia('(min-width: 900px)').matches;
-  // laptop: the odds strip sits in the side panel above the log, off the table
+  const wide = SIDE.matches;
+  // wide laptop: the odds strip sits in the side panel above the log, off the table
   const html = `<div class="opps${P.length - (P[me] ? 1 : 0) >= 5 ? ' many' : ''}">${opps}</div>
     ${board}
     <div class="market" id="market" data-pile="${esc(discardFaces(pub).length + ':' + (pub.discardTop || ui.discards || []).join(','))}">${market}</div>
@@ -586,7 +594,7 @@ function renderGame(v) {
       <button class="icon-btn" id="btn-menu" aria-label="Game menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
     <div class="dice">${dice}</div>
     ${wide ? '' : odds}
-    <div class="myarea">${myP ? seat(me) : ''}<div class="mine">${mine || '<span class="nocards sr-only">No cards yet</span>'}</div></div>
+    <div class="myarea">${myP ? seat(me) : ''}<div class="mine" style="--n:${Math.max(1, nMine)}">${mine || '<span class="nocards sr-only">No cards yet</span>'}</div>${abil.html ? `<div class="abil">${abil.html}</div>` : ''}</div>
     <div class="acts">${acts}</div>
     <div id="g-side">${wide ? odds : ''}<div class="panel logbox"><span class="label">Log</span><div class="scroll" style="flex:1"><ul class="log">${logHtml}</ul></div></div></div>`;
   const tpl = document.createElement('template'); tpl.innerHTML = html;
@@ -607,6 +615,11 @@ function renderGame(v) {
     T.pile($('#dpile', v), discardFaces(pub), { seed: 'kot-discard', max: 4, rot: 12, off: 3 });
   }
   if (wide) { const sc = $('#g-side .logbox .scroll', v); if (sc) sc.scrollTop = sc.scrollHeight; }
+  // a row squeezed so its cards overlap shows each name from its left edge (the part still in view)
+  v.querySelectorAll('.mine, .seat .scards').forEach(row => {
+    const c = row.querySelectorAll('.chipcard');
+    row.classList.toggle('tight', c.length > 1 && c[1].getBoundingClientRect().left - c[0].getBoundingClientRect().left < c[0].getBoundingClientRect().width - 14);
+  });
   wireGame(v, pub, me, ask);
   markDrawn();
   floats(pub);
@@ -804,7 +817,15 @@ function wireGame(v, pub, me, ask) {
   v.querySelectorAll('[data-mimic]').forEach(b => b.onclick = () => mimicSheet(pub, me, false));
   v.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => cardSheet(pub.market[+b.dataset.slot], { slot: +b.dataset.slot }));
   v.querySelectorAll('[data-top]').forEach(b => b.onclick = () => cardSheet(snap.mine.top, { top: true }));
-  v.querySelectorAll('[data-card]').forEach(b => b.onclick = e => { e.stopPropagation(); cardSheet(b.dataset.card, { k: +b.dataset.k }); });
+  // a card squeezed to a thin strip in a long row is hard to hit: tapping it opens the owner's full card list instead
+  v.querySelectorAll('[data-card]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const nx = b.nextElementSibling && b.nextElementSibling.matches('.chipcard') ? b.nextElementSibling : null;
+    const strip = nx ? nx.getBoundingClientRect().left - b.getBoundingClientRect().left : 99;
+    const owner = b.closest('[data-mon]') ? +b.closest('[data-mon]').dataset.mon : b.closest('.mine') ? me : -1;
+    if (strip < 30 && owner >= 0 && pub.players[owner]) { monsterSheet(owner); return; }
+    cardSheet(b.dataset.card, { k: +b.dataset.k });
+  });
   v.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => monsterSheet(+b.dataset.mon));
 }
 

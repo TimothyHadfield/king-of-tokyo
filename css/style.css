@@ -100,7 +100,7 @@ nav.tabs .brand { display: none; }
   box-shadow: 0 1px 1px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.42); outline: 2px solid transparent; outline-offset: 1px;
   transition: outline-color .14s, box-shadow .14s; }
 .pc::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(255,255,255,.28), transparent 38%, transparent 72%, rgba(0,0,0,.07)); }
-.pc .nm { flex: none; background: linear-gradient(#3d3652, #262130); color: #fff; font-weight: 800; font-size: 9px; line-height: 1.12;
+.pc .nm { flex: none; background: linear-gradient(#3d3652, #262130); color: #fff; font-weight: 800; font-size: 10px; line-height: 1.12;
   padding: 3px 4px; min-height: calc(2.24em + 6px); display: flex; align-items: center; text-align: center; justify-content: center; letter-spacing: .01em; overflow: hidden; }
 .pc .cst { position: absolute; left: 2px; top: calc(2.24em + 9px); font-size: 9px; z-index: 2; display: inline-flex; align-items: center; height: 17px; padding: 0 5px 0 1px;
   border-radius: 9px; background: #1b1d27; color: var(--en); border: 1px solid #6b561c; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
@@ -145,29 +145,33 @@ nav.tabs .brand { display: none; }
 .chipcard.mini.top .nm { flex: 1; min-height: 0; }
 
 /* ------------------------------------------------ the table */
-#game { flex: 1; min-height: 0; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr);
+/* phone: rivals across the top; the Tokyo board (true 2:1) with the deck on its left and the discard pile on
+   its right, the three face-up cards right under it; then the talk, dice, odds, your board and the buttons */
+#game { flex: 1; min-height: 0; display: grid; gap: 6px; --side: 50px;
   margin: -10px -12px -8px; padding: 8px 10px 8px; border-radius: 0;
-  grid-template-rows: auto minmax(64px, 1fr) auto auto auto auto auto auto;
-  grid-template-areas: "opps" "board" "market" "status" "dice" "odds" "me" "acts"; }
+  grid-template-columns: var(--side) repeat(3, minmax(0, 1fr)) var(--side);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto auto;
+  grid-template-areas: "opps opps opps opps opps" "deck board board board pile" "deck c1 c2 c3 pile" "status status status status status"
+    "dice dice dice dice dice" "odds odds odds odds odds" "me me me me me" "acts acts acts acts acts"; }
 
 /* seats: a cardboard monster board in the monster's colour, with a heart dial, a star dial and a pile of green energy cubes */
 .opps { grid-area: opps; display: flex; gap: 5px; min-width: 0; }
 .seat { position: relative; flex: 1 1 0; min-width: 0; display: grid; cursor: pointer; padding: 4px 4px 4px; border-radius: 7px;
-  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 24px 22px; grid-template-areas: "av nm nm" "hp vp en"; column-gap: 3px; row-gap: 3px; align-items: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 24px 24px; grid-template-areas: "av nm nm" "hp vp en"; column-gap: 3px; row-gap: 3px; align-items: center;
   background: linear-gradient(160deg, rgba(255,255,255,.18), rgba(0,0,0,.28) 70%), var(--mc);
   border: 1px solid rgba(0,0,0,.55); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 0 #24170d, 0 4px 9px rgba(0,0,0,.5);
   transition: box-shadow .15s, opacity .2s; }
 .seat .mboard { display: contents; }
 .seat .av { grid-area: av; width: 24px; height: 24px; display: block; justify-self: center; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: inset 0 1px 3px rgba(0,0,0,.4); }
 .seat .av svg { width: 100%; height: 100%; display: block; }
-.seat .nmx { grid-area: nm; font-size: 10.5px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.dial { position: relative; justify-self: center; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+.seat .nmx { grid-area: nm; font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dial { position: relative; justify-self: center; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
   background: radial-gradient(closest-side, #f5efdf 0 56%, transparent 58%), repeating-conic-gradient(rgba(255,255,255,.55) 0 4deg, transparent 4deg 18deg), var(--ring);
   box-shadow: inset 0 -2px 2px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.5); }
 .dial.hp { grid-area: hp; --ring: #b8283a; } .dial.vp { grid-area: vp; --ring: #2a5ea8; }
-.dial b { font-size: 10.5px; font-weight: 900; color: #1d1b17; font-variant-numeric: tabular-nums; line-height: 1; position: relative; z-index: 1; }
+.dial b { font-size: 12px; font-weight: 900; color: #1d1b17; font-variant-numeric: tabular-nums; line-height: 1; position: relative; z-index: 1; }
 .dial svg { position: absolute; left: -4px; top: -4px; width: 11px; height: 11px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
-.cubes { grid-area: en; justify-self: center; display: inline-flex; align-items: center; gap: 1px; font-size: 11px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; font-variant-numeric: tabular-nums; }
+.cubes { grid-area: en; justify-self: center; display: inline-flex; align-items: center; gap: 1px; font-size: 12px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; font-variant-numeric: tabular-nums; }
 .cube { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none;
   background: linear-gradient(135deg, rgba(220,255,220,.95), rgba(70,210,100,.85) 45%, rgba(20,120,50,.9));
   box-shadow: inset -1px -1px 0 rgba(0,0,0,.25), inset 1px 1px 0 rgba(255,255,255,.5), 1px 2px 2px rgba(0,0,0,.5); }
@@ -176,16 +180,16 @@ nav.tabs .brand { display: none; }
   box-shadow: 0 1px 0 rgba(0,0,0,.4), 0 2px 3px rgba(0,0,0,.45); color: #fff; }
 .seat .tok.poison { right: -3px; background: radial-gradient(closest-side, #5a9a3a 0 74%, #1d3a12 78%); }
 .seat .tok.shrink { right: 14px; background: radial-gradient(closest-side, #3a7ab8 0 74%, #12304a 78%); }
-.where { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: 8px; font-weight: 900; letter-spacing: .08em; padding: 0 4px; border-radius: 3px; background: #7b3fd0; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.where { position: absolute; top: -7px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: 10px; line-height: 1.2; font-weight: 900; letter-spacing: .06em; padding: 0 4px; border-radius: 3px; background: #7b3fd0; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
 .where.bay { background: #2f7fc4; }
 .seat .scards { display: none; }
-.seat .ncards { position: absolute; right: 3px; top: 4px; display: inline-flex; align-items: center; font-size: 9px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; z-index: 2; pointer-events: none; }
+/* the rival's little card fan hangs off the bottom-left corner of its board, clear of the name */
+.seat .ncards { position: absolute; left: 3px; bottom: -6px; display: inline-flex; align-items: center; font-size: 10px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000; z-index: 2; pointer-events: none; }
 .seat .ncards i { --c: #f3ead3; width: 8px; height: 11px; border-radius: 1.5px; border: 1px solid #211d2a; background: linear-gradient(#262130 0 30%, var(--c) 30%); box-shadow: 1px 1px 1px rgba(0,0,0,.45); }
 .seat .ncards i:nth-child(odd) { transform: rotate(-8deg); } .seat .ncards i:nth-child(even) { transform: rotate(7deg); }
 .seat .ncards i + i { margin-left: -3px; }
 .seat .ncards i.kVP { --c: #e8b25a; } .seat .ncards i.kE { --c: #e7cf55; } .seat .ncards i.kH { --c: #e7838d; } .seat .ncards i.kC { --c: #b9ae96; } .seat .ncards i.kD { --c: #8ea6cf; }
 .seat .ncards b { margin-left: 2px; }
-.opps .seat:has(.ncards i) .nmx { padding-right: 12px; }
 .seat.turn { box-shadow: 0 0 0 2px var(--accent-warm), 0 0 14px rgba(240,179,84,.55), 0 4px 9px rgba(0,0,0,.5); }
 .seat.wait { box-shadow: 0 0 0 2px var(--accent), 0 4px 9px rgba(0,0,0,.5); }
 .seat.out { opacity: .38; filter: grayscale(.7); }
@@ -195,50 +199,76 @@ nav.tabs .brand { display: none; }
 @keyframes shake { 20% { transform: translateX(-3px); } 40% { transform: translateX(3px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
 
 @media (max-width: 899px) {
-  .opps.many .seat { padding: 4px 2px; column-gap: 1px; grid-template-rows: 22px 20px; }
-  .opps.many .seat .nmx { font-size: 9.5px; }
-  .opps.many .seat .av { width: 20px; height: 20px; }
-  .opps.many .dial { width: 19px; height: 19px; } .opps.many .dial b { font-size: 9.5px; } .opps.many .dial svg { width: 9px; height: 9px; left: -3px; top: -3px; }
-  .opps.many .cube.c2, .opps.many .cube.c3 { display: none; } .opps.many .cube { width: 8px; height: 8px; } .opps.many .cubes { font-size: 10px; }
+  .opps.many { gap: 3px; }
+  .opps.many .seat { padding: 4px 2px 5px; column-gap: 0; grid-template-rows: 20px 23px; }
+  .opps.many .seat .nmx { font-size: 10px; }
+  .opps.many .seat .av { width: 19px; height: 19px; }
+  .opps.many .dial { width: 23px; height: 23px; } .opps.many .dial b { font-size: 12px; letter-spacing: -.03em; } .opps.many .dial svg { width: 9px; height: 9px; left: -3px; top: -3px; }
+  .opps.many .cube.c2, .opps.many .cube.c3 { display: none; } .opps.many .cube { width: 8px; height: 8px; } .opps.many .cubes { font-size: 12px; }
 }
 /* my seat at the bottom edge: my board, then my keep cards in a row */
 .myarea { grid-area: me; display: flex; gap: 8px; align-items: center; min-width: 0; min-height: 66px; }
-.seat.me { flex: none; width: 150px; grid-template-columns: 40px repeat(3, minmax(0, 1fr)); grid-template-rows: 18px 26px; grid-template-areas: "av nm nm nm" "av hp vp en"; padding: 6px 6px; }
+.seat.me { flex: 0 1 auto; min-width: 104px; width: 136px; grid-template-columns: 40px repeat(3, minmax(0, 1fr)); grid-template-rows: 18px 26px; grid-template-areas: "av nm nm nm" "av hp vp en"; padding: 6px 6px; }
 .seat.me .av { width: 38px; height: 38px; }
 .seat.me .dial { width: 25px; height: 25px; } .seat.me .dial b { font-size: 12px; }
 .seat.me .cubes { font-size: 12.5px; }
-.mine { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; }
+.mine { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; --mw: 46px; min-width: min(100%, calc(var(--mw) + (var(--n) - 1) * 14px + 4px)); }
 .mine::-webkit-scrollbar { display: none; }
-.mine .chipcard.mini + .chipcard.mini { margin-left: -8px; }
-.mine .btn.small { flex: none; margin-left: 6px; }
+/* my keep cards overlap just enough that the whole row fits (each keeps at least a 14 px strip; tap a strip for all of them) */
+.mine .chipcard.mini { width: var(--mw); }
+.mine .chipcard.mini + .chipcard.mini { margin-left: max(calc(14px - var(--mw)), min(-8px, calc((100% - var(--n) * var(--mw)) / (var(--n) - 1)))); }
+.tight .chipcard.mini .nm { justify-content: flex-start; text-align: left; padding-left: 3px; }
+.abil { flex: none; display: flex; flex-direction: column; flex-wrap: wrap; max-height: 76px; gap: 4px; align-items: stretch; }
+.abil .btn.small { flex: none; }
 .mine .nocards { font-size: 12px; color: rgba(243,239,228,.55); padding-left: 2px; }
 
 /* the Tokyo board: printed city over the bay, a standee on each taken spot */
-.board { grid-area: board; position: relative; display: flex; min-height: 0; overflow: hidden; border-radius: 8px;
+/* the wrapper is the space the board may use; the board itself keeps the real board's 2:1 shape inside it,
+   as large as fits, and everything on it scales with it (cqh = 1% of the board's height) */
+.bwrap { grid-area: board; min-width: 0; min-height: 0; display: grid; place-items: center; container-type: size; }
+.board { position: relative; display: flex; width: 100%; height: 100%; overflow: hidden; border-radius: 8px;
   border: 3px solid #1b120b; box-shadow: inset 0 0 0 1px rgba(255,230,180,.35), 0 3px 0 #0d0906, 0 8px 18px rgba(0,0,0,.55); }
+@supports (container-type: size) {
+  .board { width: min(100cqw, 200cqh); height: auto; aspect-ratio: 2 / 1; container-type: size; }
+}
 .board .bart { position: absolute; inset: 0; width: 100%; height: 100%; }
-.spot { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 8px 6px; min-width: 0; z-index: 1; }
-.spot::before { content: ""; position: absolute; inset: 5px; border: 2px solid rgba(255,240,210,.75); border-radius: 9px; background: rgba(30,12,40,.28); box-shadow: inset 0 0 12px rgba(0,0,0,.35); pointer-events: none; }
+.spot { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px 7px 5px; min-width: 0; z-index: 1; }
+.spot::before { content: ""; position: absolute; inset: 4px; border: 2px solid rgba(255,240,210,.75); border-radius: 9px; background: rgba(30,12,40,.28); box-shadow: inset 0 0 12px rgba(0,0,0,.35); pointer-events: none; }
 .spot.bay::before { background: rgba(14,52,100,.45); border-color: rgba(190,225,255,.8); }
-.spot .tag { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 1; font-size: 8.5px; font-weight: 900; letter-spacing: .14em; color: #fff;
-  background: #6a2fb8; padding: 1px 7px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.5); white-space: nowrap; }
+.spot .tag { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 1; font-size: 10px; font-weight: 900; letter-spacing: .08em; color: #fff;
+  background: #6a2fb8; padding: 1px 6px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.5); white-space: nowrap; }
 .spot.bay .tag { background: #2a6fae; }
-.spot .occ { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* the standee stands on its spot with its owner's name on a plate at its feet */
+.spot .occ { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
 .spot .occ.enter { animation: stomp .45s ease-out both; }
 .standee { position: relative; flex: none; display: block; }
 .standee svg { display: block; width: 52px; height: 52px; position: relative; z-index: 1;
   filter: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff) drop-shadow(0 3px 2px rgba(0,0,0,.5)); }
 .standee::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -4px; height: 9px; border-radius: 50%; background: linear-gradient(#5b616e, #23262d); box-shadow: 0 2px 3px rgba(0,0,0,.6); }
-.plate { min-width: 0; background: rgba(12,8,16,.62); padding: 1px 7px; border-radius: 4px; color: #fff; }
-.plate b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plate { position: relative; z-index: 2; margin-top: -7px; min-width: 0; max-width: 100%; background: rgba(12,8,16,.62); padding: 1px 6px; border-radius: 4px; color: #fff; text-align: center; }
+.plate b { display: block; font-size: 12px; line-height: 1.15; overflow-wrap: normal; }
 .plate span { font-size: 11.5px; color: #e9e3f2; white-space: nowrap; }
 .plate svg { width: 11px; height: 11px; vertical-align: -1px; }
 .spot .empty { position: relative; font-size: 12px; font-weight: 800; letter-spacing: .1em; color: rgba(255,240,210,.8); text-transform: uppercase; text-shadow: 0 1px 2px #000; }
+@supports (container-type: size) {
+  .spot { padding: clamp(15px, 13cqh, 34px) 7px clamp(5px, 4cqh, 16px); }
+  .spot .tag { font-size: clamp(10px, 7.5cqh, 15px); top: clamp(3px, 2.5cqh, 9px); }
+  .standee svg { width: clamp(26px, 46cqh, 170px); height: clamp(26px, 46cqh, 170px); }
+  .plate b { font-size: clamp(11px, 9cqh, 22px); }
+  .spot .empty { font-size: clamp(11px, 8cqh, 20px); }
+  /* a small board: names sit on the bottom edge and the standee shrinks, so a two-line name never reaches the tag */
+  @container (max-height: 100px) { .spot { justify-content: flex-end; padding-bottom: 3px; } .standee svg { width: 22px; height: 22px; } }
+}
 @keyframes stomp { from { transform: translateY(-24px) scale(.8); opacity: 0; } 70% { transform: translateY(2px); } to { transform: none; opacity: 1; } }
 
 /* the market: deck, three cards, discard pile */
-.market { grid-area: market; display: grid; grid-template-columns: 44px repeat(3, minmax(0, 76px)) 44px; justify-content: center; align-items: center; gap: 6px; }
-.mcol { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+/* the market's pieces sit straight on the table grid: deck left of the board, the 3 cards under it, discard right */
+.market { display: contents; }
+.market > .mcol:first-child { grid-area: deck; }
+.market > :nth-child(2) { grid-area: c1; } .market > :nth-child(3) { grid-area: c2; } .market > :nth-child(4) { grid-area: c3; }
+.market > .mcol:last-child { grid-area: pile; }
+.market > .pc, .market > .slot { align-self: center; }
+.mcol { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
 .deck, .dpile { --card-w: 44px; }
 .kback { --back: #3b1f5e; --ink: rgba(244,197,66,.2); --back-frame: #211d2a; }
 .kback::before { content: ""; position: absolute; inset: 24% 18%; z-index: 1; background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23f4c542' stroke='%237a5512' stroke-width='.8'%3E%3Cpath d='M5 20C6 13 9 7 14 3c-2.6 5-3.6 10-3.8 16z'/%3E%3Cpath d='M10.5 21c1-6 3.4-11 7.8-15-2 4.7-2.8 9.4-3 14.6z'/%3E%3Cpath d='M16 21.5c.9-4.2 2.6-7.8 5.2-10.5-1 3.3-1.4 6.6-1.4 10.2z'/%3E%3C/g%3E%3C/svg%3E"); }
@@ -271,12 +301,17 @@ nav.tabs .brand { display: none; }
 .acts .btn:not(.primary):not(.warm) { background: rgba(26,22,18,.85); border-color: rgba(255,255,255,.16); }
 #g-side { display: none; }
 
-/* laptop: the whole table, the others round the far side, odds + log in a slim side panel */
+/* laptop: the others round the far side; the Tokyo board (2:1, as big as fits) on the left, the deck, the
+   3 cards and the discard pile to its right with the talk, dice and odds under them; your board at the bottom.
+   Wide screens (1700+) add the odds + log side panel; below that the log is behind its button. */
 @media (min-width: 900px) {
-  #game { margin: -14px -18px; padding: 14px 18px; column-gap: 18px; row-gap: 10px;
-    grid-template-columns: minmax(0, 1fr) auto 300px;
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
-    grid-template-areas: "opps opps side" "board market side" "status status side" "dice dice side" "me me side" "acts acts side"; }
+  #game { margin: -14px -18px; padding: 14px 18px; column-gap: 12px; row-gap: 8px;
+    --side: 84px; --cw: clamp(100px, 15vh, 140px);
+    grid-template-columns: minmax(0, 1fr) var(--side) repeat(3, var(--cw)) var(--side);
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "opps opps opps opps opps opps" "board . . . . ." "board deck c1 c2 c3 pile" "board status status status status status"
+      "board dice dice dice dice dice" "board odds odds odds odds odds" "board acts acts acts acts acts" "board . . . . ." "me . . . . ."; }
+  .bwrap { margin-right: 6px; }
   .opps { justify-content: space-around; gap: 14px; align-items: flex-start; }
   .opps .seat { align-content: start; }
   .opps .seat { flex: 0 1 230px; }
@@ -288,37 +323,42 @@ nav.tabs .brand { display: none; }
   .seat .ncards { display: none; }
   .seat .scards { grid-area: sc; display: flex; gap: 0; margin-top: 5px; min-height: 0; }
   .seat .scards:empty { display: none; }
-  .seat .scards .chipcard.mini { width: 56px; }
-  .seat .scards .chipcard.mini .nm { font-size: 9px; }
-  .seat .scards .chipcard.mini + .chipcard.mini { margin-left: -6px; }
+  /* a rival's keep cards overlap just enough to stay on its own board (tap the board for the full list) */
+  .seat .scards .chipcard.mini { width: 58px; }
+  .seat .scards .chipcard.mini .nm { font-size: 10px; }
+  .seat .scards .chipcard.mini + .chipcard.mini { margin-left: max(-44px, min(-6px, calc((100% - var(--n) * 58px) / (var(--n) - 1)))); }
   .seat.me { width: 230px; grid-template-rows: 22px 30px; grid-template-areas: "av nm nm nm" "av hp vp en"; padding: 9px 10px; }
   .seat.me .av { width: 48px; height: 48px; }
   .seat.me .dial { width: 30px; height: 30px; } .seat.me .dial b { font-size: 14px; }
   .myarea { gap: 16px; min-height: 96px; }
-  .mine .chipcard.mini { width: 62px; }
-  .mine .chipcard.mini .nm { font-size: 9px; }
-  .mine .chipcard.mini + .chipcard.mini { margin-left: -4px; }
-  .board { min-height: 200px; }
-  .spot .occ { gap: 16px; }
-  .standee svg { width: clamp(90px, 17vh, 150px); height: clamp(90px, 17vh, 150px); }
-  .plate { padding: 5px 12px; }
-  .plate b { font-size: 21px; } .plate span { font-size: 14px; } .plate svg { width: 14px; height: 14px; }
-  .spot .tag { font-size: 11px; top: 6px; padding: 2px 10px; }
-  .spot .empty { font-size: 18px; }
+  .mine { --mw: 68px; }
+  .mine .chipcard.mini .nm { font-size: 10px; }
+  .abil { flex-direction: row; max-height: none; order: 1; }
+  .myarea .mine { order: 2; }
+  .plate { padding: 3px 12px; }
+  .plate span { font-size: 14px; } .plate svg { width: 14px; height: 14px; }
+  .spot .tag { padding: 2px 10px; }
   .spot::before { inset: 8px; }
-  .market { grid-template-columns: 84px repeat(3, 120px) 84px; align-content: center; gap: 10px; }
   .deck, .dpile { --card-w: 84px; }
   .market .sweep { width: 84px; height: 40px; flex-direction: row; gap: 5px; font-size: 12px; }
   .market .sweep b { font-size: 14px; }
-  .market .pc .nm { font-size: 11px; }
-  .market .pc .cst { top: calc(2.24em + 10px); }
-  .market .pc .tx { display: block; font-size: 9.5px; line-height: 1.18; padding: 2px 4px 3px; max-height: 5.9em; overflow: hidden; flex: none; }
-  .market .pc .art svg { width: 34%; }
+  .market .pc .nm { font-size: 11.5px; }
+  .market .pc .cst { top: calc(2.24em + 11px); }
+  /* the rules text gets the lower half of the card; the picture shrinks to what's left */
+  .market .pc .tx { display: block; font-size: clamp(10px, calc(var(--cw) * .082), 11.5px); line-height: 1.17; padding: 2px 5px 3px; flex: none; }
+  .market .pc .art svg { width: 30%; max-height: 70%; }
   .dpile .pc .nm { font-size: 8px; } .dpile .pc .ty { font-size: 7px; }
   .die { width: 62px; height: 62px; border-radius: 13px; }
   .dice { gap: 14px; min-height: 80px; }
   .acts { justify-content: center; }
   .acts .btn { flex: none; min-width: 150px; }
+  #game .odds { max-width: 100%; }
+  ul.log { font-size: 13px; gap: 3px; }
+}
+@media (min-width: 1700px) {
+  #game { grid-template-columns: minmax(0, 1fr) var(--side) repeat(3, var(--cw)) var(--side) 300px;
+    grid-template-areas: "opps opps opps opps opps opps side" "board . . . . . side" "board deck c1 c2 c3 pile side" "board status status status status status side"
+      "board dice dice dice dice dice side" "board odds odds odds odds odds side" "board acts acts acts acts acts side" "board . . . . . side" "me . . . . . side"; }
   #btn-log { display: none; }
   #g-side { grid-area: side; display: flex; flex-direction: column; gap: 10px; min-height: 0;
     margin: -14px -18px -14px 0; padding: 14px 18px 14px 14px; background: var(--bg); border-left: 1px solid #000; box-shadow: -6px 0 18px rgba(0,0,0,.45); }
@@ -328,21 +368,23 @@ nav.tabs .brand { display: none; }
   ul.log { font-size: 13px; gap: 3px; }
 }
 
-/* phone held sideways: board and market on the left, dice and your seat on the right */
+/* phone held sideways: rivals across the top; board, deck, cards and pile on the left; talk, dice, odds,
+   your board and the buttons on the right */
 @media (max-width: 899px) and (max-height: 500px) and (orientation: landscape) {
-  #game { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px; row-gap: 4px;
-    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "opps status" "board dice" "board odds" "market me" "market acts"; }
-  .board { min-height: 74px; }
-  .standee svg { width: 40px; height: 40px; }
-  .market { grid-template-columns: 40px repeat(3, minmax(0, 62px)) 40px; gap: 5px; align-self: start; margin-top: 6px; }
+  #game { --side: 40px; column-gap: 6px; row-gap: 4px;
+    grid-template-columns: var(--side) repeat(3, minmax(0, 58px)) var(--side) minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "opps opps opps opps opps opps" "board board board board board status" "board board board board board dice" "board board board board board odds"
+      "board board board board board ." "deck c1 c2 c3 pile me" "deck c1 c2 c3 pile acts"; }
+  #game .bwrap { margin-top: 4px; }
   .deck, .dpile { --card-w: 40px; }
   .market .sweep { width: 40px; height: 34px; }
+  .acts .btn, .myarea { min-height: 40px; }
+  .status { min-height: 34px; } .status .icon-btn { width: 36px; height: 36px; }
   .dice { min-height: 50px; padding-top: 6px; }
   .die { width: 40px; height: 40px; }
   .myarea { min-height: 58px; }
   .seat.me .av { width: 32px; height: 32px; }
-  .market .pc .nm { font-size: 7.5px; letter-spacing: 0; }
 }
 
 ul.log { list-style: none; margin: 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
@@ -352,7 +394,9 @@ ul.log li b { color: var(--text); font-weight: 650; }
 
 /* ------------------------------------------------ sheets + overlays */
 .sheet-back { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; animation: fade .18s; }
-.sheet { width: 100%; max-width: 520px; max-height: 82dvh; background: var(--card); border: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; animation: up .22s ease-out; }
+.sheet { width: 100%; max-width: 520px; max-height: 82dvh; background: var(--card); border: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; animation: up .22s ease-out; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet > * { flex-shrink: 0; }
+.sheet > .scroll { flex-shrink: 1; }
 @media (min-width: 900px) { .sheet-back { align-items: center; } .sheet { border-radius: 16px; max-width: 460px; } }
 @keyframes up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
@@ -426,7 +470,11 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 .ver { color: #59607a; font-size: 12px; text-align: center; }
 .ver a { color: #59607a; }
 
-@media (max-width: 360px) { .opps.many .seat { grid-template-areas: "nm nm nm" "hp vp en"; } .opps.many .seat .av { display: none; } .opps.many .seat .nmx { text-align: center; } .standee svg { width: 42px; height: 42px; } .die { width: 38px; height: 38px; } .seat.me { width: 128px; } .opps .seat { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 360px) { .opps.many .seat { grid-template-areas: "nm nm nm" "hp vp en"; } .opps.many .seat .av { display: none; } .opps.many .seat .nmx { text-align: center; } .die { width: 38px; height: 38px; } .seat.me { width: 124px; } .opps .seat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #game { --side: 40px; }
+  .myarea { gap: 6px; }
+  .abil .btn.small { max-width: 50px; white-space: normal; line-height: 1.15; padding: 4px 4px; }
+  .spot .tag { letter-spacing: 0; padding: 1px 4px; } }
 @media (max-height: 640px) and (max-width: 899px) and (orientation: portrait) { #game { gap: 4px; } .dice { min-height: 50px; padding-top: 6px; } .die { width: 40px; height: 40px; } .myarea { min-height: 60px; } }
 
 /* Sound & effects (js/fx.js): rows match the other Settings rows; the switches gate the game's own animations too */
@@ -454,8 +502,5 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 .q { position: relative; }
 .q::before { content: ""; position: absolute; inset: -11px; }
 /* long card names stay on two lines on the phone's small cards, clear of the cost badge */
-@media (max-width: 899px) { .pc:not(.big) .nm.long { font-size: 7.3px; letter-spacing: 0; } }
-@media (max-width: 360px) { .pc:not(.big) .nm { font-size: 8px; letter-spacing: 0; } .pc:not(.big) .nm.long { font-size: 6.6px; } }
-/* the deck stands clear of the Tokyo board on the phone */
-@media (max-width: 899px) and (orientation: portrait) { .market { margin-top: 6px; } }
+@media (max-width: 899px) { .pc:not(.big) .nm { padding: 3px 2px; letter-spacing: -.01em; } .pc:not(.big) .nm.long { letter-spacing: -.03em; } }
 @media (min-width: 900px) { .seat .tok { width: 21px; height: 21px; font-size: 11px; } .dial svg { left: -6px; top: -6px; } }

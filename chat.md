@@ -8,6 +8,12 @@
 - **Open**: see progress.md NOT verified (card wording sources, Psychic Probe timing, real iPhone).
 - **QA pass** (fresh agent, live site) found 11 issues; all fixed the same day, with `tests/ui-fixes.mjs` seen failing on the old live build and passing on the fix. The 2-player variant is now disabled on the 2011 deck (rulebook variant is 2016).
 
+## 2026-10-20: visibility pass (builder, manager wave)
+- **Asked** (Tim): cards/board "too small to easily see what's going on"; fill the screen with the board, fit the rest in the empty space, make dense parts readable (full quote in progress.md).
+- **Built** (css/style.css, js/app.js, index.html): true 2:1 board that fills its area; deck + pile beside the board on phone; landscape board across the left; laptop Reroll/Done under the dice, my area under the board; larger rival dials, tags and card names; overlap-to-fit card rows (thin strip opens the full list); ability buttons beside my cards; scrolling sheets; log panel only at ≥1700 px.
+- **Verified**: new `tests/layout-ui.mjs` (old build 42 fails, new ALL PASS at 393/320/659 WebKit, 1280/1440/1536/1920 Chromium); engine+fx 41, online 6, ui-fixes, edge-ui, ui-play (393 + desktop), fx-ui, two-browsers. Before/after shots + one read-only review in the manager scratchpad `vis/king-of-tokyo/`.
+- **Open**: real iPhone; laptop still has empty wood beside my cards.
+
 ## 2026-10-20: weird-case pass (builder, manager wave)
 - **Asked** (Tim): "making each game perfect especially in scenarios that the game doesn't expect or are a little weird" (full quote in progress.md). Plus leftovers: flaky double-tap test, 3× slower redraw, blank discard after reload.
 - **Built**: solid tap guard (`markDrawn`), partial redraw, `discardTop` in the public view, single auto-done timer, knocked-out button, smaller fan with 5 rivals, purple deal ghost, mid-game speed change, `_table` 1.0.1 re-copy + `.gitattributes`.
