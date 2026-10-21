@@ -75,15 +75,25 @@ function toast(msg) {
 
 // tap guard: a quick second tap (double tap / double-click) must not land on whatever was just drawn
 // in the same spot (Roll -> Reroll, Reroll -> the next Reroll, a card -> its Buy sheet). Taps elsewhere pass.
-const tapGuard = { t: -1e9, x: 0, y: 0, el: null };
+// A slow phone can take longer than any fixed window to draw, so the guard also counts from when the
+// new screen was first shown: a tap there that comes before it has been visible for 300 ms is the
+// second half of a double tap, not a choice (shown = Infinity while the redraw is still unseen).
+const tapGuard = { t: -1e9, x: 0, y: 0, el: null, shown: -1e9, seq: 0 };
+function markDrawn() {
+  const g = tapGuard;
+  if (g.shown !== Infinity && g.shown > g.t) return; // only the first redraw after a tap counts
+  g.shown = Infinity;
+  const seq = ++g.seq;
+  requestAnimationFrame(() => setTimeout(() => { if (seq === g.seq) g.shown = performance.now(); }, 0));
+}
 document.addEventListener('click', e => {
   const tgt = e.target && e.target.closest ? e.target : null;
   if (!tgt || !tgt.closest('#v-play, #sheet')) return;
   const g = tapGuard, now = performance.now();
   const near = Math.abs(e.clientX - g.x) < 44 && Math.abs(e.clientY - g.y) < 44;
   const redrawn = g.el && tgt !== g.el && (!g.el.isConnected || (!!tgt.closest('#sheet') && !g.el.closest('#sheet')));
-  if (now - g.t < 450 && near && redrawn) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return; }
-  g.t = now; g.x = e.clientX; g.y = e.clientY; g.el = tgt;
+  if (near && redrawn && (now - g.t < 450 || now < g.shown + 300)) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return; }
+  g.t = now; g.x = e.clientX; g.y = e.clientY; g.el = tgt; g.shown = -1e9;
 }, true);
 function costTag(n) { return `<span class="cost">${Art.icon('E', 14)}${n}</span>`; }
 const DIE_INK = '#5fd36e'; // the real dice: green symbols on black
@@ -116,6 +126,7 @@ function openSheet(html, onMount) {
   document.body.appendChild(b);
   if (onMount) onMount(b.firstElementChild);
   ui.sheetOpen = true;
+  markDrawn();
 }
 function closeSheet() { const s = $('#sheet'); if (s) s.remove(); ui.sheetOpen = false; ui.sheetKind = null; }
 
@@ -154,7 +165,7 @@ function render() {
 const BOTMS = (() => { try { const v = +new URLSearchParams(location.search).get('botms'); return v > 0 ? v : 0; } catch (e) { return 0; } })();
 function speedMs() { return BOTMS || (store.settings.speed === 'fast' ? 320 : 750); }
 
-function startLocal(resume) {
+function startLocal(resume, quiet) {
   closeRoom();
   const st = store.settings;
   const kinds = resume ? resume.kinds : st.kinds.slice();
@@ -166,13 +177,14 @@ function startLocal(resume) {
   try {
     fixMons();
     room = createLocal({ game: g, seats, options: { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons }, botDelayMs: speedMs() });
-    ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = ''; ui.marketSeen = [];
+    ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = '';
+    if (!quiet) ui.marketSeen = [];
     if (!resume) { store.study = []; store.keepSel = null; }
     room.on('change', s => onSnap(s));
     room.on('error', e => toast(String(e && e.message || e)));
     // a resumed game is restored and drawn inside this try: a broken save fails here, not later
     room.start();
-    if (resume && (!snap || !snap.pub || !document.querySelector('#v-play #game'))) throw new Error('nothing drawn');
+    if (resume && !quiet && (!snap || !snap.pub || !document.querySelector('#v-play #game'))) throw new Error('nothing drawn');
   } catch (e) { ui.restoring = false; restoreFailed(); return; }
   ui.restoring = false;
 }
@@ -464,8 +476,10 @@ function renderGame(v) {
     const toks = (p.poison ? `<span class="tok poison" title="Poison">☠${p.poison > 1 ? p.poison : ''}</span>` : '') + (p.shrink ? `<span class="tok shrink" title="Shrink">↓${p.shrink > 1 ? p.shrink : ''}</span>` : '');
     const where = pub.tokyo.city === i ? '<span class="where">CITY</span>' : pub.tokyo.bay === i ? '<span class="where bay">BAY</span>' : '';
     // phone: a tiny face-up fan in the board's corner (one little card per keep card, tinted by kind); laptop: readable mini cards
-    const fan = p.cards.slice(0, 6).map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).join('');
-    const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}</span>${p.cards.length ? `<span class="ncards" aria-label="${p.cards.length} cards">${fan}${p.cards.length > 6 ? `<b>${p.cards.length}</b>` : ''}</span>` : ''}`;
+    // five rivals across a phone leave each board narrow: a smaller fan plus the count, so the name stays readable
+    const fanMax = P.length - (P[me] ? 1 : 0) >= 5 ? 2 : 6;
+    const fan = p.cards.slice(0, fanMax).map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).join('');
+    const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}</span>${p.cards.length ? `<span class="ncards" aria-label="${p.cards.length} cards">${fan}${p.cards.length > fanMax ? `<b>${p.cards.length}</b>` : ''}</span>` : ''}`;
     return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col}">
       <div class="mboard">${where}<span class="av">${playerFace(p, i)}</span><span class="nmx">${esc(i === me ? (p.name === 'You' ? 'You' : p.name) : p.name)}</span>
         <span class="dial hp">${Art.icon('H', 12)}<b data-n="hp">${p.hp}</b></span><span class="dial vp">${Art.icon('VP', 12)}<b data-n="vp">${p.vp}</b></span></div>
@@ -560,37 +574,48 @@ function renderGame(v) {
   // ---- log
   const logHtml = logList(pub, me, 40);
 
-  v.innerHTML = `<div id="game" class="tbl-surface tbl-wood-dark">
-    <div class="opps${P.length - (P[me] ? 1 : 0) >= 5 ? ' many' : ''}">${opps}</div>
+  // only the parts of the table that changed are drawn again (a full redraw repainted the whole wooden
+  // table on every tap: about 4x slower than before the table look in Safari's engine, measured)
+  const wide = window.matchMedia('(min-width: 900px)').matches;
+  // laptop: the odds strip sits in the side panel above the log, off the table
+  const html = `<div class="opps${P.length - (P[me] ? 1 : 0) >= 5 ? ' many' : ''}">${opps}</div>
     ${board}
-    <div class="market" id="market">${market}</div>
+    <div class="market" id="market" data-pile="${esc(discardFaces(pub).length + ':' + (pub.discardTop || ui.discards || []).join(','))}">${market}</div>
     <div class="status"><div class="grow" style="min-width:0"><div class="who">${who}</div></div><span class="sub">${sub}</span>
       <button class="icon-btn" id="btn-log" aria-label="Game log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
       <button class="icon-btn" id="btn-menu" aria-label="Game menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
     <div class="dice">${dice}</div>
-    ${odds}
+    ${wide ? '' : odds}
     <div class="myarea">${myP ? seat(me) : ''}<div class="mine">${mine || '<span class="nocards sr-only">No cards yet</span>'}</div></div>
     <div class="acts">${acts}</div>
-    <div id="g-side"><div class="panel logbox"><span class="label">Log</span><div class="scroll" style="flex:1"><ul class="log">${logHtml}</ul></div></div></div>
-  </div>`;
+    <div id="g-side">${wide ? odds : ''}<div class="panel logbox"><span class="label">Log</span><div class="scroll" style="flex:1"><ul class="log">${logHtml}</ul></div></div></div>`;
+  const tpl = document.createElement('template'); tpl.innerHTML = html;
+  const news = [...tpl.content.children], newHtml = news.map(n => n.outerHTML);
+  let g = $('#game', v);
+  const olds = g ? [...g.children] : [];
+  const same = g && ui.secHtml && olds.length === news.length && ui.secHtml.length === news.length;
+  if (!same) {
+    v.innerHTML = '<div id="game" class="tbl-surface tbl-wood-dark"></div>';
+    g = $('#game', v); news.forEach(n => g.appendChild(n));
+  } else news.forEach((n, k) => { if (newHtml[k] !== ui.secHtml[k]) olds[k].replaceWith(n); });
+  const marketNew = !same || newHtml[2] !== ui.secHtml[2];
+  ui.secHtml = newHtml;
   // the deck is a real stack (thinner as it's drawn), the discard pile a loose face-up heap
   const T = window.TABLE;
-  if (T) {
+  if (T && marketNew) {
     T.deck($('#deck', v), pub.deckSize, { pattern: 'sunburst', cls: 'kback', badge: true, perCard: 0.2, max: 10 });
     T.pile($('#dpile', v), discardFaces(pub), { seed: 'kot-discard', max: 4, rot: 12, off: 3 });
   }
-  // laptop: the odds strip sits in the side panel above the log, off the table
-  if (window.matchMedia('(min-width: 900px)').matches) {
-    const side = $('#g-side'), od = $('#game > .odds', v);
-    if (od) side.insertBefore(od, side.firstChild);
-    const sc = side.querySelector('.logbox .scroll'); if (sc) sc.scrollTop = sc.scrollHeight;
-  }
+  if (wide) { const sc = $('#g-side .logbox .scroll', v); if (sc) sc.scrollTop = sc.scrollHeight; }
   wireGame(v, pub, me, ask);
+  markDrawn();
   floats(pub);
   dealIn(dealt);
   if (pub.over && !ui.endShown) { ui.endShown = true; setTimeout(() => showEnd(), 700); }
   // nothing left to do with the dice: resolve on its own
-  if (ask === 'roll' && !t.opts.length && !abil.change) ui.autoDone = setTimeout(() => act({ t: 'done' }), 650);
+  // (one timer only: every redraw, like tapping a die, used to start another one and the second 'done' failed)
+  clearTimeout(ui.autoDone);
+  if (ask === 'roll' && !t.opts.length && !abil.change) ui.autoDone = setTimeout(() => { if (myAsk() === 'roll' && ui.lastRoll === rollKey) act({ t: 'done' }); }, 650);
   // decisions that need a sheet
   if (ask === 'ray' && ui.sheetKind !== 'ray') raySheet(pub, me);
   if (ask === 'mimic' && ui.sheetKind !== 'mimic') mimicSheet(pub, me, true);
@@ -615,7 +640,8 @@ function miniCard(c, extra) {
 function discardFaces(pub) {
   const n = pub.discardSize || 0;
   if (!n) { ui.discards = []; return []; }
-  const known = (ui.discards || []).filter(id => CARDS[id]).slice(-Math.min(4, n));
+  // the pile is face up and public: the view carries its top cards (older rooms: what this screen saw)
+  const known = (Array.isArray(pub.discardTop) ? pub.discardTop : ui.discards || []).filter(id => CARDS[id]).slice(-Math.min(4, n));
   const out = [];
   for (let k = known.length; k < Math.min(4, n); k++) out.push('<span class="tbl-card pc used"></span>');
   return out.concat(known.map(id => cardFace(id, 'tbl-card pc pile ' + (CARDS[id].keep ? 'K' : 'D'), null, '', 'span')));
@@ -635,7 +661,7 @@ function trackDiscards(prev, pub) {
 function dealIn(slots) {
   const T = window.TABLE, dk = $('#deck');
   if (!T || !dk || !slots.length) return;
-  slots.forEach((k, j) => { const to = document.querySelector(`#market [data-slot="${k}"]`); if (to) setTimeout(() => T.deal(dk, to, { duration: Math.round(320 * fxSp()) }), j * 90); });
+  slots.forEach((k, j) => { const to = document.querySelector(`#market [data-slot="${k}"]`); if (to) setTimeout(() => T.deal(dk, to, { cls: 'kback', duration: Math.round(320 * fxSp()) }), j * 90); });
 }
 
 function abilities(pub, me, ask) {
@@ -681,6 +707,7 @@ function actionButtons(pub, me, ask) {
     case 'ray': return `<button class="btn primary" id="btn-ray">Healing Ray…</button>`;
     case 'mimic': return `<button class="btn primary" id="btn-mimicpick">Pick a card to copy…</button>`;
   }
+  if (p && !p.alive) return `<button class="btn" disabled>You’re knocked out · watching</button>`;
   return `<button class="btn" disabled>${pub.cur === me ? 'Working…' : 'Waiting…'}</button>`;
 }
 function safeKo(pub, me, hp) { try { return Bots.koChance(pub, me, hp); } catch (e) { return null; } }
@@ -1050,7 +1077,11 @@ function renderSettings() {
     <div class="panel"><div class="row"><span class="label grow">Sound &amp; effects</span></div><div id="fx-box"></div></div>
     <div class="ver">King of Tokyo Lab ${VERSION} · fan-made study tool, not affiliated with the publisher · <a href="../">All games</a></div>
   </div>`;
-  v.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { st[b.dataset.k] = b.dataset.v; save(); renderSettings(); });
+  v.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    st[b.dataset.k] = b.dataset.v; save(); renderSettings();
+    // a new computer speed counts at once: the running game carries on from the same moment at the new pace
+    if (b.dataset.k === 'speed' && ui.mode === 'local' && room && room.state && !room.state.over) startLocal({ state: room.state, kinds: room.state.players.map(p => p.kind) }, true);
+  });
   v.querySelectorAll('[data-sw]').forEach(i => i.onchange = () => { st[i.dataset.sw] = i.checked; save(); });
   FX.renderSettings($('#fx-box', v));
 }

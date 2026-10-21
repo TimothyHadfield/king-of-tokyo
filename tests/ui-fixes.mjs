@@ -71,6 +71,29 @@ for (let k = 0; k < 4; k++) {
 check(rollOk && seenRoll >= 2, 'a double tap on Roll rolls once, ' + seenRoll + ' tries');
 check(rerollOk && seenReroll >= 2, 'a double tap / double-click on Reroll spends one reroll, ' + seenReroll + ' tries');
 
+// 1b. the same on a slow phone: the table takes 600 ms to draw after the first tap, so the second tap
+// comes more than 450 ms after the first (the old fixed window) but before the new screen was ever seen
+let slowOk = true, slowSeen = 0;
+await fresh();
+await page.click('#seg-n [data-n="2"]');
+await page.click('#btn-new');
+await page.waitForSelector('#game');
+await page.evaluate(() => { window.__clk = []; window.addEventListener('click', e => window.__clk.push([Math.round(performance.now()), (e.target.closest('button') || {}).id]), true); });
+for (let k = 0; k < 3; k++) {
+  await waitAsk('start');
+  await page.waitForTimeout(400);
+  // right after the first tap is handled, the page is busy for 600 ms before it can show the new screen
+  await page.evaluate(() => window.addEventListener('click', () => setTimeout(() => { const end = performance.now() + 600; while (performance.now() < end) { /* a slow phone drawing */ } }, 0), { once: true, capture: true }));
+  const [x, y] = await center('#btn-roll');
+  await page.touchscreen.tap(x, y); await page.waitForTimeout(120); await page.touchscreen.tap(x, y);
+  await page.waitForTimeout(400);
+  const s = await snapInfo();
+  if (process.env.DEBUG) console.log('clicks', JSON.stringify(await page.evaluate(() => window.__clk.splice(0))), JSON.stringify(s));
+  if (s.ask === 'roll') { slowSeen++; if (s.rollId !== 1) slowOk = false; }
+  await page.evaluate(() => { const s = window.__kot.snap; if (s.pub.ask && s.toAct.includes(s.mySeat) && s.pub.ask.type === 'roll') window.__kot.act({ t: 'done' }); });
+}
+check(slowOk && slowSeen >= 2, 'a double tap on Roll rolls once even when the screen draws slowly, ' + slowSeen + ' tries');
+
 // 2. kept dice survive a reload (own game: the first one may already be over)
 await fresh();
 await page.click('#seg-n [data-n="2"]');

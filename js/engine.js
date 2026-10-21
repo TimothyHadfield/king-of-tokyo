@@ -862,6 +862,8 @@
         cards: p.cards.map(c => Object.assign({ id: c.id, k: c.k }, c.c != null ? { c: c.c } : {}, c.t != null ? { t: c.t, as: mimicId(s, c) } : {})),
       })),
       tokyo: Object.assign({}, s.tokyo), market: s.market.slice(), deckSize: s.deck.length, discardSize: s.discard.length,
+      // the discard pile lies face up on the table: everyone sees its top cards
+      discardTop: s.discard.slice(-4),
       cur: s.cur, turnNo: s.turnNo,
       t: t ? { seat: t.seat, dice: t.dice.map(d => ({ f: d.f, k: d.k })), rerolls: t.rerolls, rolled: t.rolled, done: t.done, less: t.less,
         rollId: t.rollId || 0, rolledIdx: t.rolledIdx || [], herd: t.herd, tele: t.tele, opts: t.rolled && !t.done ? rerollOptions(s) : [] } : null,

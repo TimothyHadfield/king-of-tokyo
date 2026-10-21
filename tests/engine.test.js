@@ -358,3 +358,11 @@ test('100 computer games end properly in both editions, all table sizes, with JS
     assert.equal(s.deck.length + s.discard.length + s.market.filter(Boolean).length + cardsInPlay, 66, 'no card lost or duplicated');
   }
 });
+
+test('the discard pile is face up: the public view shows its top 4 cards (so a reload shows them too)', () => {
+  const { s } = fresh(3);
+  s.discard = ['heal', 'tanks', 'energize', 'skyscraper', 'corner-store'];
+  assert.deepEqual(E.publicView(s).discardTop, ['tanks', 'energize', 'skyscraper', 'corner-store']);
+  s.discard = [];
+  assert.deepEqual(E.publicView(s).discardTop, []);
+});
