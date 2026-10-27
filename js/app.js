@@ -689,7 +689,7 @@ function renderGame(v) {
     ${board}
     <div class="market" id="market" data-pile="${esc(discardFaces(pub).length + ':' + (pub.discardTop || ui.discards || []).join(','))}">${market}</div>
     <div class="status"><div class="grow" style="min-width:0"><div class="who">${who}</div></div><span class="sub">${sub}</span>
-      ${undoMode() ? `<button class="icon-btn" id="btn-undo" aria-label="Undo your last move" title="Undo" ${canUndo() ? '' : 'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>` : ''}
+      ${undoMode() && !pub.over ? `<button class="icon-btn" id="btn-undo" aria-label="Undo your last move" title="Undo" ${canUndo() ? '' : 'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>` : ''}
       <button class="icon-btn" id="btn-log" aria-label="Game log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
       <button class="icon-btn" id="btn-menu" aria-label="Game menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
     <div class="dice">${dice}</div>
@@ -1233,9 +1233,9 @@ function reviewSheet() {
   const pub = snap.pub, me = snap.mySeat, tl = g.tl, P = pub.players;
   let at = tl.length - 1;
   const col = i => (MONSTERS[P[i].mon] ? MONSTERS[P[i].mon].color : '#888');
-  const W = 300, H = 120, x = k => 8 + k * (W - 16) / Math.max(1, tl.length - 1), y = v => H - 8 - Math.min(20, v) * (H - 16) / 20;
+  const W = 300, H = 120, x = k => 22 + k * (W - 30) / Math.max(1, tl.length - 1), y = v => H - 8 - Math.min(20, v) * (H - 16) / 20;
   const lines = P.map((p, i) => `<polyline fill="none" stroke="${col(i)}" stroke-width="${i === me ? 3 : 2}" stroke-linejoin="round" points="${tl.map((f, k) => x(k).toFixed(1) + ',' + y(f.p[i] ? f.p[i][1] : 0).toFixed(1)).join(' ')}"/>`).join('');
-  const chart = cur => `<svg class="rv-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Stars by turn"><line x1="8" x2="${W - 8}" y1="${y(20)}" y2="${y(20)}" stroke="rgba(255,255,255,.25)" stroke-dasharray="4 4"/>${lines}<line class="rv-cur" x1="${x(cur)}" x2="${x(cur)}" y1="4" y2="${H - 4}" stroke="rgba(255,255,255,.6)"/></svg>`;
+  const chart = cur => `<svg class="rv-chart" viewBox="0 0 ${W} ${H}" aria-label="Stars by turn">${[0, 10, 20].map(v => `<text x="2" y="${y(v) + 4}" font-size="10" fill="rgba(255,255,255,.55)">${v}</text><line x1="22" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,${v === 20 ? '.3' : '.1'})" ${v === 20 ? 'stroke-dasharray="4 4"' : ''}/>`).join('')}${lines}<line class="rv-cur" x1="${x(cur)}" x2="${x(cur)}" y1="4" y2="${H - 4}" stroke="rgba(255,255,255,.6)"/></svg>`;
   const body = k => {
     const f = tl[k], nm = i => (i === me ? 'You' : esc(P[i].name));
     const who = f.end ? 'End of the game' : f.c >= 0 && P[f.c] ? `Turn ${f.n}: ${nm(f.c)}` : `Turn ${f.n}`;
@@ -1245,7 +1245,7 @@ function reviewSheet() {
       <table class="res"><tr><th>Monster</th><th>♥</th><th>★</th><th>⚡</th><th>Cards</th></tr>${rows}</table>
       <ul class="log rv-m">${moments || (k < tl.length - 1 ? '<li class="muted">No big moments this turn.</li>' : '')}</ul>`;
   };
-  openSheet(`<h3>Game review</h3><span class="muted small">★ by turn (dashed line = 20). Step through the turns below.</span>
+  openSheet(`<h3>Game review</h3><span class="muted small">★ by turn: the dashed line is 20 ★, the white line the turn shown below.</span>
     <div id="rv-chart">${chart(at)}</div>
     <div class="row"><button class="btn" id="rv-prev" aria-label="Previous turn">‹</button><input type="range" class="grow" id="rv-at" min="0" max="${tl.length - 1}" value="${at}" aria-label="Turn"><button class="btn" id="rv-next" aria-label="Next turn">›</button></div>
     <div id="rv-body" class="rv-body">${body(at)}</div>

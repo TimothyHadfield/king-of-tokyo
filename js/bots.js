@@ -293,8 +293,11 @@
       const o = pickRandom(rng, afford);
       return Object.assign({}, o.a, o.id === 'monster-batteries' ? { amount: 0 } : {});
     }
-    const spendW = lvl === 'hard' ? 0.42 : 0.4;
-    let best = null, bestGain = lvl === 'hard' ? 0.3 : 0.6;
+    // energy only matters for what it buys: the more a monster has saved, the cheaper each ⚡ feels
+    // (Medium used to sit on 8 ⚡ and buy about 1 card a game; measured with the ladder after the change)
+    const rich = p.en >= 8 ? 2 : p.en >= 6 ? 1 : 0;
+    const spendW = lvl === 'hard' ? [0.42, 0.3, 0.2][rich] : [0.4, 0.25, 0.15][rich];
+    let best = null, bestGain = lvl === 'hard' ? 0.3 : [0.6, 0.3, 0.2][rich];
     for (const o of afford) {
       if (o.id === 'monster-batteries' && s.edition === '2011') continue;
       const w = lvl === 'hard' ? cardWorth(s, i, o.id) : mediumWorth(s, i, o.id);
@@ -302,9 +305,10 @@
       if (g > bestGain) { bestGain = g; best = o; }
     }
     if (best) return best.a;
-    // Hard: sweep a weak market when rich
-    if (lvl === 'hard' && p.en >= 8) {
-      const top = Math.max(0, ...offers.map(o => cardWorth(s, i, o.id) - E.costFor(s, i, o.id) * spendW));
+    // Hard and Medium: sweep a weak market when rich
+    if (p.en >= 8) {
+      const worth = id => (lvl === 'hard' ? cardWorth(s, i, id) : mediumWorth(s, i, id));
+      const top = Math.max(0, ...offers.map(o => worth(o.id) - E.costFor(s, i, o.id) * spendW));
       if (top < 0 && s.deck.length >= 3) return { t: 'sweep' };
     }
     return { t: 'end' };

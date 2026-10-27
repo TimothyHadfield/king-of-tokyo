@@ -9,8 +9,8 @@
   // Elo of each level from 4-player games, one level against three Mediums (tools/measure-levels.js, 2026-10-27).
   // A seat's win share s against a fair share of 1/4 is read as a head-to-head score p = s / (s + (1 - s) / 3);
   // difference = 400·log10(p / (1 − p)), rounded to 10. Easy anchored at 1200.
-  //   Easy 4.3% vs 3 Medium -> p 0.12 -> Medium is +350.   Hard 46.4% vs 3 Medium -> p 0.72 -> +170.
-  const LEVELS = [{ id: 'easy', name: 'Easy', rating: 1200 }, { id: 'medium', name: 'Medium', rating: 1550 }, { id: 'hard', name: 'Hard', rating: 1720 }];
+  //   Easy 2.2% vs 3 Medium -> p 0.063 -> Medium is +470.   Hard 37.8% vs 3 Medium -> p 0.65 -> +100.
+  const LEVELS = [{ id: 'easy', name: 'Easy', rating: 1200 }, { id: 'medium', name: 'Medium', rating: 1670 }, { id: 'hard', name: 'Hard', rating: 1770 }];
   const RANK = { easy: 0, medium: 1, hard: 2 };
 
   const won = c => !!(c.last && c.last.won);

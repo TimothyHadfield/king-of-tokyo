@@ -514,7 +514,7 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 .coach-rules .coach-rules-nav { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
 
 /* end-of-game review: star race, turn stepper, the table at that turn */
-.rv-chart { display: block; width: 100%; height: 120px; margin: 6px 0 2px; }
+.rv-chart { display: block; width: 100%; height: auto; max-height: 150px; margin: 6px 0 2px; }
 .rv-body { min-height: 210px; }
 .rv-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 .rv-tk { font-size: 10px; line-height: 1.2; font-weight: 900; letter-spacing: .06em; padding: 0 4px; border-radius: 3px; background: #7b3fd0; color: #fff; margin-left: 4px; }
