@@ -39,6 +39,8 @@ const state = () => {
 
 async function rulesCheck(page, name, how) {
   await page.waitForTimeout(350);
+  // (the sheet slides up; under load the slide can outlast 350 ms, so wait for it to settle)
+  await page.waitForFunction(() => { const s = document.querySelector('.coach-rules'); return s && s.getAnimations().every(a => a.playState !== 'running'); }, null, { timeout: 2000 }).catch(() => {});
   const rs = await page.evaluate(() => {
     const back = document.querySelector('.coach-rules-back'); if (!back) return null;
     const body = back.querySelector('.coach-rules-body'), sh = back.querySelector('.coach-rules').getBoundingClientRect();
@@ -46,7 +48,7 @@ async function rulesCheck(page, name, how) {
     return { font: parseFloat(getComputedStyle(body).fontSize), small, sideways: body.scrollWidth > body.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth,
       inView: sh.top >= -0.5 && sh.bottom <= innerHeight + 0.5 && sh.left >= -0.5 && sh.right <= innerWidth + 0.5, secs: body.querySelectorAll('section').length, words: body.textContent.split(/\s+/).length };
   });
-  check(rs && rs.font >= 15 && rs.small === 0 && !rs.sideways && rs.inView && rs.secs >= 8, `${name}: rules from ${how}: ${rs && rs.secs} sections, ${rs && rs.words} words, ${rs && rs.font}px, sideways ${rs && rs.sideways}`);
+  check(rs && rs.font >= 15 && rs.small === 0 && !rs.sideways && rs.inView && rs.secs >= 8, `${name}: rules from ${how}: ${rs && rs.secs} sections, ${rs && rs.words} words, ${rs && rs.font}px, sideways ${rs && rs.sideways}${rs && !rs.inView ? " NOT IN VIEW" : ""}${rs && rs.small ? " small " + rs.small : ""}`);
 }
 
 for (const [name, eng, w, h, mobile] of SIZES) {

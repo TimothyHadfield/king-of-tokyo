@@ -43,3 +43,9 @@
 - **Asked** (Tim): "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered."
 - **Built**: `js/fx.js` (shared library, copied unchanged), `js/fx-events.js` (snapshot diff → events → sounds, plus our own roar/smash/heal/zap/star recipes), app.js hooks (onSnap → fxReact, keep knock, error sound, countUp/flash/shake/pop/pulse, celebrate), Settings "Sound & effects" panel, CSS gating the game's own animations (`fx-noanim`, `fx-fast`).
 - **Verified**: tests/fx.test.js (3 tests) + tests/fx-ui.mjs, both seen failing on the old build; 37 engine, ui-fixes, ui-play 393 WebKit + 1280 Chromium all pass. Shots in the manager scratchpad `design/king-of-tokyo-fx/`.
+
+## 2026-10-27: rules sheet + guided first game (builder, manager wave "improve", resumed after a laptop crash)
+- **Asked** (manager, plan item 2): shared kit `_coach` (guided first game + rules sheet), piloted here; the site had no rules page.
+- **Built**: kit repo TimothyHadfield/game-coach (coach.js/coach.css, demo, tests); here `js/tutorial.js` (rules in our own words, seed 11, scripted rolls, 17 steps), app.js wiring (offer once, Rules from setup/⋯ menu/Settings, Replay tutorial, resume after reload, Back closes rules).
+- **Verified**: tutorial.test.js 8/8 (seen failing with the rig off / seed changed); coach-ui.mjs ALL PASS at 393, 320, 659×393 (WebKit), 1280, 1440 (Chromium); engine/fx/online, ui-fixes, ui-play (393 + desktop reload), layout-ui, edge-ui, fx-ui all pass. One reviewer pass: fixed the step-7 wording vs the green dots, "you still lose the ♥" when leaving, Bay hits, ⋯ menu pointer.
+- **Open**: see NOT verified (tutorial stops after turn 2; chips scroll on phone).
