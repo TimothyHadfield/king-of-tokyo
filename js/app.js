@@ -26,6 +26,13 @@ function fxClasses() {
 }
 FX.onChange(fxClasses); fxClasses();
 
+// ------------------------------------------------------------------ guided first game + rules (js/coach.js, js/tutorial.js)
+// if either file failed to load, the game runs without them
+const COACH = window.COACH || null, KT = window.KotTutorial || null;
+const TUT_ID = 'kot-first-game';
+let tour = null;   // made after `ui` exists (its conditions read the running game)
+function openRules(open) { if (COACH && KT) { closePop(); COACH.rules(Object.assign(KT.rules(Art), { open })); } }
+
 // ------------------------------------------------------------------ storage
 const KEY = 'kot-lab-v1';
 const DEFAULTS = { level: 'medium', edition: '2016', bay: true, duel: false, speed: 'normal', hints: true, name: '', kinds: ['human', 'computer', 'computer', 'computer'] };
@@ -136,6 +143,32 @@ let room = null;     // local room (createLocal) or online room
 let snap = null;     // latest snapshot
 const net = { room: null };
 
+// the coach follows the tutorial game's own state; it steps aside on other tabs and while a sheet is open
+if (COACH && KT) {
+  const tctx = {
+    pub: () => (snap && snap.pub) || null,
+    me: () => (snap ? snap.mySeat : 0),
+    ask: () => (snap && snap.pub ? myAsk() : null),
+    inTokyo: i => !!(snap && snap.pub && (snap.pub.tokyo.city === i || snap.pub.tokyo.bay === i)),
+  };
+  tour = COACH.tour({
+    id: TUT_ID, steps: KT.steps(tctx),
+    pauseIf: () => ui.tab !== 'play' || ui.sheetOpen || !ui.tut || !snap || !snap.pub,
+    onFinish: () => { ui.tut = false; },
+  });
+}
+// a stacked first game against two Easy computers, with the coach on top
+function startTutorial() {
+  if (!tour) return;
+  closeSheet(); if (COACH) COACH.closeOffer();
+  if (ui.mode === 'online') { toast('Leave the online room first.'); return; }
+  store.saved = null; save();
+  tour.reset();
+  if (ui.tab !== 'play') setTab('play', true);
+  startLocal(null, false, true);
+  if (ui.tut) tour.start();
+}
+
 // ------------------------------------------------------------------ tabs + back button
 function setTab(t, push) {
   if (!['play', 'odds', 'cards', 'settings'].includes(t)) t = 'play';
@@ -144,11 +177,13 @@ function setTab(t, push) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + t));
   if (push) history.pushState({ tab: t }, '', '#' + t);
   closeSheet(); closePop();
+  if (COACH && t !== 'play') COACH.closeOffer();
   render();
 }
 document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab, true); });
 // Back with a sheet open only closes the sheet: the address goes back to the tab that is still shown
 window.addEventListener('popstate', () => {
+  if (COACH && COACH.rulesOpen()) { COACH.closeRules(); history.pushState({ tab: ui.tab }, '', '#' + ui.tab); return; }
   if (ui.sheetOpen) { closeSheet(); history.pushState({ tab: ui.tab }, '', '#' + ui.tab); return; }
   setTab((location.hash || '#play').slice(1), false);
 });
@@ -165,18 +200,25 @@ function render() {
 const BOTMS = (() => { try { const v = +new URLSearchParams(location.search).get('botms'); return v > 0 ? v : 0; } catch (e) { return 0; } })();
 function speedMs() { return BOTMS || (store.settings.speed === 'fast' ? 320 : 750); }
 
-function startLocal(resume, quiet) {
+function startLocal(resume, quiet, tutorial) {
   closeRoom();
+  if (COACH) COACH.closeOffer();
   const st = store.settings;
-  const kinds = resume ? resume.kinds : st.kinds.slice();
+  // the guided first game: fixed seats and options, and the scripted dice (rebuilt the same way after a reload)
+  const tut = !!(KT && COACH && (tutorial || (resume && resume.tut)));
+  const kinds = resume ? resume.kinds : tut ? KT.KINDS.slice() : st.kinds.slice();
   let hn = 0;
   const seats = kinds.map((k, i) => ({ kind: k, name: k === 'human' ? (kinds.filter(x => x === 'human').length > 1 ? 'Player ' + (++hn) : (st.name || 'You')) : 'Computer' }));
-  const g = resume ? Object.assign({}, GAME, { setup: () => resume.state }) : GAME;
+  let g = resume ? Object.assign({}, GAME, { setup: () => resume.state }) : GAME;
+  let rng = Math.random;
+  if (tut) { rng = COACH.rng(KT.SEED); g = KT.rigGame(g, rng); }
   // computers get their monster's name
   ui.restoring = !!resume;
   try {
     fixMons();
-    room = createLocal({ game: g, seats, options: { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons }, botDelayMs: speedMs() });
+    const options = tut ? Object.assign({}, KT.OPTIONS, { monsters: KT.monsters(st.mons[0]) }) : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons };
+    ui.tut = tut;
+    room = createLocal({ game: g, seats, options, botDelayMs: speedMs(), rng });
     ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = '';
     if (!quiet) ui.marketSeen = [];
     if (!resume) { store.study = []; store.keepSel = null; }
@@ -185,7 +227,7 @@ function startLocal(resume, quiet) {
     // a resumed game is restored and drawn inside this try: a broken save fails here, not later
     room.start();
     if (resume && !quiet && (!snap || !snap.pub || !document.querySelector('#v-play #game'))) throw new Error('nothing drawn');
-  } catch (e) { ui.restoring = false; restoreFailed(); return; }
+  } catch (e) { ui.restoring = false; ui.tut = false; restoreFailed(); return; }
   ui.restoring = false;
 }
 function restoreFailed() {
@@ -197,13 +239,17 @@ function closeRoom() {
   if (room && room.mode === 'local' && room.close) room.close();
   room = null; snap = null; ui.mode = null;
   clearTimeout(ui.autoDone);
+  // the coach hides with its game (its place is kept: the saved tutorial game resumes it)
+  ui.tut = false; if (tour && tour.active) tour.stop();
 }
+// the tutorial game was quit or finished: the coach is done too
+function endTutorial() { if (tour && (tour.active || tour.saved())) tour.finish('skip'); ui.tut = false; }
 function onSnap(s) {
   const prev = snap && snap.pub ? snap.pub : null;
   snap = s;
   if (ui.mode === 'local' && room && room.state) {
     if (s.status === 'finished') store.saved = null;
-    else store.saved = { state: room.state, kinds: room.state.players.map(p => p.kind) };
+    else store.saved = Object.assign({ state: room.state, kinds: room.state.players.map(p => p.kind) }, ui.tut ? { tut: true } : {});
     save();
   }
   try { trackDiscards(prev, s.pub); } catch (e) { /* the pile is decoration */ }
@@ -324,7 +370,7 @@ function renderSetup(v) {
   const seatRows = kinds.map((k, i) => `<div class="seatrow"><button class="icon-btn" style="width:38px;height:36px;border:0;background:none" data-mon-pick="${i}" aria-label="Change monster">${Art.monster(st.mons[i], 32)}</button><span class="nmx">${MONSTERS[st.mons[i]].name} <span class="muted small">· ${k === 'human' ? (i === 0 ? esc(st.name || 'You') : 'Person ' + (i + 1)) : st.level[0].toUpperCase() + st.level.slice(1)}</span></span>
       <button class="btn small kindbtn" data-seat="${i}" ${i === 0 ? 'disabled' : ''}>${k === 'human' ? 'Person' : 'Computer'}</button></div>`).join('');
   v.innerHTML = `<div class="setup">
-    <div class="hero"><img src="icon.svg" alt=""><div><h1>King of Tokyo Lab</h1><p>Smash Tokyo with exact dice odds.</p></div></div>
+    <div class="hero"><img src="icon.svg" alt=""><div class="grow"><h1>King of Tokyo Lab</h1><p>Smash Tokyo with exact dice odds.</p></div>${KT && COACH ? '<button class="btn small" id="btn-rules0">Rules</button>' : ''}</div>
     <div class="panel">
       <div class="row"><span class="label grow">Monsters</span>${qTip('Each extra “Person” seat is another player passing this phone. With 5 or 6 monsters, Tokyo Bay opens as a second spot in Tokyo.')}</div>
       <div class="seg" id="seg-n">${[2, 3, 4, 5, 6].map(n => `<button data-n="${n}" aria-pressed="${kinds.length === n}">${n}</button>`).join('')}</div>
@@ -352,8 +398,13 @@ function renderSetup(v) {
   v.querySelectorAll('.kindbtn').forEach(b => b.onclick = () => {
     const i = +b.dataset.seat; st.kinds[i] = st.kinds[i] === 'human' ? 'computer' : 'human'; save(); renderSetup(v);
   });
-  $('#btn-new').onclick = () => { store.saved = null; save(); startLocal(null); };
-  if ($('#btn-resume')) $('#btn-resume').onclick = () => startLocal(store.saved);
+  $('#btn-new').onclick = () => { if (store.saved && store.saved.tut) endTutorial(); store.saved = null; save(); startLocal(null); };
+  if ($('#btn-resume')) $('#btn-resume').onclick = () => { startLocal(store.saved); if (ui.tut && tour) tour.resume(); };
+  if ($('#btn-rules0')) $('#btn-rules0').onclick = () => openRules();
+  // first visit: offer the guided first game, once
+  if (COACH && tour && !store.saved && !tour.seen() && !COACH.offered(TUT_ID)) {
+    COACH.offer({ id: TUT_ID, title: 'New to King of Tokyo?', text: 'Play a guided first game against two computers.', yes: 'Teach me', no: 'No thanks', onYes: startTutorial });
+  }
   $('#in-name').oninput = e => { st.name = e.target.value.slice(0, 20); save(); };
   $('#btn-create').onclick = () => createOnlineRoom();
   $('#btn-join').onclick = () => joinOnlineRoom($('#in-code').value);
@@ -632,6 +683,7 @@ function renderGame(v) {
   // decisions that need a sheet
   if (ask === 'ray' && ui.sheetKind !== 'ray') raySheet(pub, me);
   if (ask === 'mimic' && ui.sheetKind !== 'mimic') mimicSheet(pub, me, true);
+  if (ui.tut && tour && tour.active) tour.update();
 }
 
 function safeAdvise(pub, me) { try { return Bots.advise(pub, me); } catch (e) { return null; } }
@@ -964,16 +1016,19 @@ function safeDist(pub, me) {
 function gameMenu() {
   const online = ui.mode === 'online';
   openSheet(`<h3>Game</h3>
+    ${KT && COACH ? '<button class="btn" id="btn-rules1">Rules</button>' : ''}
     ${online ? `<span class="muted small">Room ${esc(snap.code || '')}</span><button class="btn danger" id="btn-quit">Leave room</button>` : '<button class="btn danger" id="btn-quit">Quit this game</button>'}
     <button class="btn ghost" id="btn-x">Close</button>`, el => {
     $('#btn-x', el).onclick = closeSheet;
-    $('#btn-quit', el).onclick = () => { closeSheet(); if (online) leaveOnline(); else { closeRoom(); store.saved = null; save(); renderPlay(); } };
+    if ($('#btn-rules1', el)) $('#btn-rules1', el).onclick = () => { closeSheet(); openRules(); };
+    $('#btn-quit', el).onclick = () => { closeSheet(); if (online) leaveOnline(); else { if (ui.tut) endTutorial(); closeRoom(); store.saved = null; save(); renderPlay(); } };
   });
 }
 
 function newGameFromEnd() {
   closeSheet();
   if (ui.mode === 'online') { leaveOnline(); return; }
+  if (ui.tut) endTutorial();
   closeRoom(); store.saved = null; save(); renderPlay();
 }
 
@@ -1096,15 +1151,22 @@ function renderSettings() {
       <div class="setrow"><div class="grow"><b>Computer speed</b></div><div style="width:170px">${seg('speed', [['normal', 'Normal'], ['fast', 'Fast']])}</div></div>
     </div>
     <div class="panel"><div class="row"><span class="label grow">Sound &amp; effects</span></div><div id="fx-box"></div></div>
+    ${KT && COACH ? `<div class="panel"><div class="row"><span class="label grow">How to play</span></div><div class="row"><button class="btn grow" id="btn-rules2">Rules</button><button class="btn grow" id="btn-tut">Replay tutorial</button></div></div>` : ''}
     <div class="ver">King of Tokyo Lab ${VERSION} · fan-made study tool, not affiliated with the publisher · <a href="../">All games</a></div>
   </div>`;
   v.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
     st[b.dataset.k] = b.dataset.v; save(); renderSettings();
     // a new computer speed counts at once: the running game carries on from the same moment at the new pace
-    if (b.dataset.k === 'speed' && ui.mode === 'local' && room && room.state && !room.state.over) startLocal({ state: room.state, kinds: room.state.players.map(p => p.kind) }, true);
+    if (b.dataset.k === 'speed' && ui.mode === 'local' && room && room.state && !room.state.over) {
+      const wasTut = ui.tut;
+      startLocal(Object.assign({ state: room.state, kinds: room.state.players.map(p => p.kind) }, wasTut ? { tut: true } : {}), true);
+      if (wasTut && ui.tut && tour) tour.resume();
+    }
   });
   v.querySelectorAll('[data-sw]').forEach(i => i.onchange = () => { st[i.dataset.sw] = i.checked; save(); });
   FX.renderSettings($('#fx-box', v));
+  if ($('#btn-rules2', v)) $('#btn-rules2', v).onclick = () => openRules();
+  if ($('#btn-tut', v)) $('#btn-tut', v).onclick = () => startTutorial();
 }
 
 // ================================================================== boot
@@ -1116,4 +1178,4 @@ if (store.online) {
     renderPlay();
   }).catch(() => { store.online = false; save(); ui.mode = null; room = null; snap = null; renderPlay(); });
 }
-window.__kot = { get snap() { return snap; }, get room() { return room; }, act };
+window.__kot = { get snap() { return snap; }, get room() { return room; }, act, get tour() { return tour; }, get tut() { return !!ui.tut; } };
