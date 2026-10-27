@@ -102,11 +102,19 @@ for (const [name, eng, w, h, mobile] of SIZES) {
       if (s.ask === 'roll' && s.idx === 6) { for (const i of [0, 1, 3]) { await page.click(`#v-play [data-die="${i}"]`); await page.waitForTimeout(80); } await page.click('#btn-reroll'); continue; }
       if (s.ask === 'roll') { await page.click('#btn-done'); continue; }
       if (s.ask === 'buy') { await page.click('#btn-end'); await page.waitForTimeout(200); if (await page.locator('#sheet').count()) await page.keyboard.press('Escape'); continue; }
-      if (s.ask === 'yield') { await page.click('#btn-stay'); continue; }
+      if (s.ask === 'yield') { await page.click(/Tap Leave/.test(s.text || '') ? '#btn-leave' : '#btn-stay'); continue; }
     }
     check(first === '331E2H', `${name}: the stacked first roll (${first})`);
     check(!s.active && seen.size >= 11, `${name}: the coach runs to the end (${seen.size} steps shown: ${[...seen].join(',')})`);
     check(bad === 0, `${name}: every note on screen and off its target`);
+    // the guided game ends in a win: the end card is up
+    const won = await page.evaluate(() => { const p = window.__kot.snap && window.__kot.snap.pub; return !!(p && p.over && p.winners.includes(window.__kot.snap.mySeat)); });
+    check(won, `${name}: the guided game ends with your win`);
+    const pf = await page.evaluate(() => ({ games: window.Profile ? window.Profile.stats().games : 0, line: (document.querySelector('#sheet') || {}).textContent || '' }));
+    check(pf.games === 0 && !/Counted/.test(pf.line), `${name}: the guided game is not counted in My stats (${pf.games} games)`);
+    if (shots) await page.screenshot({ path: `${shots}/${name}-won.png` });
+    if (await page.locator('#sheet').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(200); }
+    if (await page.locator('#sheet').count()) { await page.click('#sheet #btn-x'); await page.waitForTimeout(200); }
     // the game goes on, the rules from the game menu
     await page.click('#btn-menu'); await page.waitForTimeout(250);
     await page.click('#btn-rules1'); await rulesCheck(page, name, 'game menu');

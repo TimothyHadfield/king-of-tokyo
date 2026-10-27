@@ -423,7 +423,7 @@ ul.log li b { color: var(--text); font-weight: 650; }
 .kindbtn { min-width: 98px; }
 @media (min-width: 900px) {
   .setup { display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
-  .setup .hero { grid-column: 1 / 3; }
+  .setup .hero, .setup .pf-row { grid-column: 1 / 3; }
 }
 
 /* ------------------------------------------------ end of game */
@@ -522,5 +522,41 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 table.res tr.out td { opacity: .5; }
 table.res tr.me td:first-child { font-weight: 700; }
 .rv-m { margin: 6px 0 0; }
-.pf-row { margin: 0 0 10px; }
+.pf-row { margin: 0; }
 .pf-open svg { vertical-align: middle; margin-right: 6px; border-radius: 50%; }
+
+/* a hit: three claw marks tear across the monster (bigger on the Tokyo standee) */
+.claw { position: absolute; inset: -6% 4%; z-index: 6; pointer-events: none; }
+.claw svg { width: 100%; height: 100%; overflow: visible; }
+.claw path { fill: none; stroke: #fff4ec; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100;
+  filter: drop-shadow(0 0 3px #e0283c) drop-shadow(0 0 1px #7a0d18); animation: clawdraw .22s ease-out forwards, clawfade .35s .45s forwards; }
+.claw path:nth-child(2) { animation-delay: .05s, .5s; } .claw path:nth-child(3) { animation-delay: .1s, .55s; }
+.claw.big { inset: -14% -10%; }
+.claw.big path { stroke-width: 9; }
+.standee .claw { z-index: 3; }
+@keyframes clawdraw { to { stroke-dashoffset: 0; } }
+@keyframes clawfade { to { opacity: 0; } }
+.fx-fast .claw path { animation-duration: .13s, .22s; }
+.fx-noanim .claw { display: none; }
+@media (prefers-reduced-motion: reduce) { .claw { display: none; } }
+
+/* laptop below 1700px wide: the table fills the screen; no empty wood above the board or under the dice.
+   Board on the left next to the market, talk, dice, odds and buttons; your board and the log run under both. */
+@media (min-width: 900px) and (max-width: 1699px) and (min-height: 700px) {
+  #game { grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr);
+    grid-template-areas: "opps opps opps opps opps opps" "board deck c1 c2 c3 pile" "board status status status status status"
+      "board dice dice dice dice dice" "board odds odds odds odds odds" "board acts acts acts acts acts" "me me me me me me" "side side side side side side"; }
+  #btn-log { display: none; }
+  #g-side { grid-area: side; display: flex; min-height: 0; }
+  #g-side .logbox { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; margin: 0; padding: 8px 12px;
+    background: rgba(8,6,4,.55); border: 1px solid rgba(255,255,255,.12); color: #f3efe4; }
+  #g-side .logbox .label { color: rgba(243,239,228,.6); }
+  #g-side .logbox .scroll { min-height: 0; }
+}
+/* bigger monster portraits on laptops */
+@media (min-width: 900px) {
+  .opps .seat { grid-template-columns: 56px repeat(3, minmax(0, 1fr)); grid-template-rows: 24px 30px auto; }
+  .opps .seat .av { width: 54px; height: 54px; }
+  .seat.me { grid-template-columns: 62px repeat(3, minmax(0, 1fr)); grid-template-rows: 26px 32px; }
+  .seat.me .av { width: 60px; height: 60px; }
+}

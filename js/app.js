@@ -160,7 +160,7 @@ function cleanMeta(m) {
   const o = newMeta();
   if (typeof m.gid === 'string') o.gid = m.gid.slice(0, 24);
   if (typeof m.daily === 'string' && /^\d{4}-\d\d-\d\d$/.test(m.daily)) o.daily = m.daily;
-  o.helped = m.helped === true; o.recorded = m.recorded === true; o.moved = m.moved === true;
+  o.helped = m.helped === true; o.tut = m.tut === true; o.recorded = m.recorded === true; o.moved = m.moved === true;
   o.tokyoTurns = Number.isInteger(m.tokyoTurns) ? m.tokyoTurns : 0;
   o.tl = Array.isArray(m.tl) ? m.tl.filter(f => f && Number.isInteger(f.n) && Array.isArray(f.p)).slice(-160) : [];
   o.undo = m.undo && m.undo.state && Array.isArray(m.undo.state.players) ? m.undo : null;
@@ -252,6 +252,7 @@ function startLocal(resume, quiet, tutorial, daily) {
       : daily ? { edition: KP.DAILY.edition, level: KP.DAILY.level, bay: true, duel: false, monsters: dm }
       : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons };
     ui.tut = tut;
+    if (tut) meta.tut = true;   // the guided game never counts in My stats, even after the coach has closed
     ui.game = meta;
     room = createLocal({ game: g, seats, options, botDelayMs: speedMs(), rng });
     ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = '';
@@ -413,7 +414,6 @@ function renderSetup(v) {
       <button class="btn small kindbtn" data-seat="${i}" ${i === 0 ? 'disabled' : ''}>${k === 'human' ? 'Person' : 'Computer'}</button></div>`).join('');
   v.innerHTML = `<div class="setup">
     <div class="hero"><img src="icon.svg" alt=""><div class="grow"><h1>King of Tokyo Lab</h1><p>Smash Tokyo with exact dice odds.</p></div>${KT && COACH ? '<button class="btn small" id="btn-rules0">Rules</button>' : ''}</div>
-    ${PF() ? `<div class="row pf-row"><button class="btn small grow pf-open" id="btn-stats0">${window.Profile.avatarSVG(window.Profile.avatar, 22)}My stats</button><button class="btn small grow" id="btn-daily0">${dailyDone() ? 'Daily ✓' : 'Daily game'}</button></div>` : ''}
     <div class="panel">
       <div class="row"><span class="label grow">Monsters</span>${qTip('Each extra “Person” seat is another player passing this phone. With 5 or 6 monsters, Tokyo Bay opens as a second spot in Tokyo.')}</div>
       <div class="seg" id="seg-n">${[2, 3, 4, 5, 6].map(n => `<button data-n="${n}" aria-pressed="${kinds.length === n}">${n}</button>`).join('')}</div>
@@ -426,6 +426,7 @@ function renderSetup(v) {
       <div class="row"><input class="txt grow" id="in-name" maxlength="20" placeholder="Your name" value="${esc(st.name)}" autocomplete="off"><button class="btn" id="btn-create">Create room</button></div>
       <div class="row"><input class="txt code grow" id="in-code" maxlength="9" placeholder="CODE" autocomplete="off" autocapitalize="characters"><button class="btn" id="btn-join">Join</button></div>
     </div>
+    ${PF() ? `<div class="row pf-row"><button class="btn grow pf-open" id="btn-stats0">${window.Profile.avatarSVG(window.Profile.avatar, 22)}My stats</button><button class="btn grow" id="btn-daily0">${dailyDone() ? 'Daily ✓' : 'Daily game'}</button></div>` : ''}
   </div>`;
   v.querySelectorAll('#seg-n button').forEach(b => b.onclick = () => {
     const n = +b.dataset.n;
@@ -711,7 +712,8 @@ function renderGame(v) {
     T.deck($('#deck', v), pub.deckSize, { pattern: 'sunburst', cls: 'kback', badge: true, perCard: 0.2, max: 10 });
     T.pile($('#dpile', v), discardFaces(pub), { seed: 'kot-discard', max: 4, rot: 12, off: 3 });
   }
-  if (wide) { const sc = $('#g-side .logbox .scroll', v); if (sc) sc.scrollTop = sc.scrollHeight; }
+  // the log panel shows on wide screens and, under the table, on laptops: keep it at the newest line
+  { const sc = $('#g-side .logbox .scroll', v); if (sc && sc.offsetParent) sc.scrollTop = sc.scrollHeight; }
   // a row squeezed so its cards overlap shows each name from its left edge (the part still in view)
   v.querySelectorAll('.mine, .seat .scards').forEach(row => {
     const c = row.querySelectorAll('.chipcard');
@@ -870,10 +872,20 @@ function floats(pub) {
       f.style.color = col[x.k]; f.style.animationDelay = (off * 120) + 'ms'; f.style.marginTop = (off * 2) + 'px';
       f.textContent = (x.n > 0 ? '+' : '') + x.n + sym[x.k];
       el.appendChild(f); setTimeout(() => f.remove(), 1500);
-      if (x.k === 'hp' && x.n < 0) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+      if (x.k === 'hp' && x.n < 0) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); clawSwipe(el); }
     });
+    // the monster standing in Tokyo gets the big swipe across its standee
+    if (x.k === 'hp' && x.n < 0) document.querySelectorAll(`#v-play .occ[data-mon="${x.s}"] .standee`).forEach(el => clawSwipe(el, true));
     off++;
   }
+}
+
+// three claw marks torn across a monster that loses ♥ (only with animations on; off for reduced motion)
+const CLAW_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M22 8 C34 38 40 62 36 92"/><path d="M48 4 C58 36 62 62 58 96"/><path d="M74 10 C82 38 84 60 78 90"/></svg>';
+function clawSwipe(el, big) {
+  if (!FX.settings.animations || !el) return;
+  const c = document.createElement('span'); c.className = 'claw' + (big ? ' big' : ''); c.innerHTML = CLAW_SVG;
+  el.appendChild(c); setTimeout(() => c.remove(), 900);
 }
 
 function wireGame(v, pub, me, ask) {
@@ -1138,7 +1150,7 @@ function recordFrom(st, me, g, online) {
   } catch (e) { /* the stats never stop the game */ }
 }
 function recordGame() {
-  if (!snap || !snap.pub || ui.tut || !ui.game) return;
+  if (!snap || !snap.pub || ui.tut || !ui.game || ui.game.tut) return;
   if (ui.mode === 'local' && room && room.state) recordFrom(room.state, snap.mySeat, ui.game, false);
   else if (ui.mode === 'online' && snap.pub.over && snap.mySeat >= 0) {
     // online: once per room (a reload shows the same finished room again)
@@ -1177,7 +1189,7 @@ function openStats(t) {
 // a line on the end card: how this game counted
 function statsLine() {
   const g = ui.game;
-  if (!PF() || !g || ui.tut) return '';
+  if (!PF() || !g || ui.tut || g.tut) return '';
   const why = ui.mode === 'online' ? 'Counted in My stats (online).' : g.helped ? 'Counted as “with help” (Undo): not rated.' : g.daily ? 'Today’s Daily game is in My stats.' : 'Counted in My stats.';
   return `<div class="row small muted"><span class="grow">${why}</span><button class="btn small pf-open" id="btn-stats2">My stats</button></div>`;
 }
