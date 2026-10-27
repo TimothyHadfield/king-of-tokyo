@@ -510,3 +510,17 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 /* rules sheet: the dice drawn as the real black dice */
 .coach-rules .kdie { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: #17191f; vertical-align: middle; margin: 1px; }
 .coach-rules td:first-child { white-space: nowrap; }
+/* rules sheet: all 9 section tabs on screen at once (they wrap to a second row instead of scrolling sideways) */
+.coach-rules .coach-rules-nav { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
+
+/* end-of-game review: star race, turn stepper, the table at that turn */
+.rv-chart { display: block; width: 100%; height: 120px; margin: 6px 0 2px; }
+.rv-body { min-height: 210px; }
+.rv-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.rv-tk { font-size: 10px; line-height: 1.2; font-weight: 900; letter-spacing: .06em; padding: 0 4px; border-radius: 3px; background: #7b3fd0; color: #fff; margin-left: 4px; }
+.rv-tk.bay { background: #2f7fc4; }
+table.res tr.out td { opacity: .5; }
+table.res tr.me td:first-child { font-weight: 700; }
+.rv-m { margin: 6px 0 0; }
+.pf-row { margin: 0 0 10px; }
+.pf-open svg { vertical-align: middle; margin-right: 6px; border-radius: 50%; }

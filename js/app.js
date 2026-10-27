@@ -29,6 +29,18 @@ FX.onChange(fxClasses); fxClasses();
 // ------------------------------------------------------------------ guided first game + rules (js/coach.js, js/tutorial.js)
 // if either file failed to load, the game runs without them
 const COACH = window.COACH || null, KT = window.KotTutorial || null;
+// My stats, achievements and the Daily game (js/profile.js + js/kotprofile.js); optional too
+const KP = window.KotProfile || null;
+const PF = () => (KP && window.Profile) || null;
+// local games draw their dice from a seeded stream whose position is saved with the game, so Undo and a
+// reload carry on with the same dice (an undone roll comes back the same, not as a fresh try)
+function seeded(a) {
+  a = (a >>> 0) || 1;
+  const r = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  r.get = () => a >>> 0;
+  return r;
+}
+const newSeed = () => (Math.floor(Math.random() * 4294967295) >>> 0) || 1;
 const TUT_ID = 'kot-first-game';
 let tour = null;   // made after `ui` exists (its conditions read the running game)
 function openRules(open) { if (COACH && KT) { closePop(); COACH.rules(Object.assign(KT.rules(Art), { open })); } }
@@ -50,7 +62,7 @@ function load() {
   if (!s.kinds.includes('human')) s.kinds[0] = 'human';
   const saved = o.saved && typeof o.saved === 'object' && o.saved.state && Array.isArray(o.saved.kinds) ? o.saved : null;
   const keepSel = o.keepSel && typeof o.keepSel === 'object' && typeof o.keepSel.key === 'string' && Array.isArray(o.keepSel.keep) ? o.keepSel : null;
-  return { settings: s, saved, online: !!o.online, study: Array.isArray(o.study) ? o.study.slice(-200) : [], keepSel };
+  return { settings: s, saved, online: !!o.online, study: Array.isArray(o.study) ? o.study.slice(-200) : [], keepSel, recOnline: typeof o.recOnline === 'string' ? o.recOnline.slice(0, 40) : '' };
 }
 const store = load();
 // each seat's monster: distinct, one per seat
@@ -139,6 +151,21 @@ function closeSheet() { const s = $('#sheet'); if (s) s.remove(); ui.sheetOpen =
 
 // ------------------------------------------------------------------ app state
 const ui = { tab: 'play', mode: null, keep: new Set(), lastRoll: null, change: null, fxKey: '', marketSeen: [], sheetOpen: false, sheetKind: null, autoDone: null, lobbyN: null, connecting: false, endShown: false };
+// the running game's extras: Undo (local, not the Daily or the guided game), whether it counts in My stats,
+// and the turn-by-turn timeline for the end-of-game review
+ui.game = null;
+function newMeta(o) { return Object.assign({ gid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), daily: null, helped: false, recorded: false, moved: false, tokyoTurns: 0, tl: [], undo: null }, o || {}); }
+function cleanMeta(m) {
+  if (!m || typeof m !== 'object') return newMeta();
+  const o = newMeta();
+  if (typeof m.gid === 'string') o.gid = m.gid.slice(0, 24);
+  if (typeof m.daily === 'string' && /^\d{4}-\d\d-\d\d$/.test(m.daily)) o.daily = m.daily;
+  o.helped = m.helped === true; o.recorded = m.recorded === true; o.moved = m.moved === true;
+  o.tokyoTurns = Number.isInteger(m.tokyoTurns) ? m.tokyoTurns : 0;
+  o.tl = Array.isArray(m.tl) ? m.tl.filter(f => f && Number.isInteger(f.n) && Array.isArray(f.p)).slice(-160) : [];
+  o.undo = m.undo && m.undo.state && Array.isArray(m.undo.state.players) ? m.undo : null;
+  return o;
+}
 let room = null;     // local room (createLocal) or online room
 let snap = null;     // latest snapshot
 const net = { room: null };
@@ -183,6 +210,7 @@ function setTab(t, push) {
 document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab, true); });
 // Back with a sheet open only closes the sheet: the address goes back to the tab that is still shown
 window.addEventListener('popstate', () => {
+  if (ui.pfOpen) { ui.pfOpen = false; if (window.Profile && window.Profile.isOpen()) window.Profile.closePanel(); return; }
   if (COACH && COACH.rulesOpen()) { COACH.closeRules(); history.pushState({ tab: ui.tab }, '', '#' + ui.tab); return; }
   if (ui.sheetOpen) { closeSheet(); history.pushState({ tab: ui.tab }, '', '#' + ui.tab); return; }
   setTab((location.hash || '#play').slice(1), false);
@@ -200,24 +228,31 @@ function render() {
 const BOTMS = (() => { try { const v = +new URLSearchParams(location.search).get('botms'); return v > 0 ? v : 0; } catch (e) { return 0; } })();
 function speedMs() { return BOTMS || (store.settings.speed === 'fast' ? 320 : 750); }
 
-function startLocal(resume, quiet, tutorial) {
+function startLocal(resume, quiet, tutorial, daily) {
   closeRoom();
   if (COACH) COACH.closeOffer();
   const st = store.settings;
   // the guided first game: fixed seats and options, and the scripted dice (rebuilt the same way after a reload)
   const tut = !!(KT && COACH && (tutorial || (resume && resume.tut)));
-  const kinds = resume ? resume.kinds : tut ? KT.KINDS.slice() : st.kinds.slice();
+  const meta = resume ? cleanMeta(resume.meta) : newMeta(daily ? { daily: daily.day } : null);
+  // today's Daily: you + 3 Medium, 2016 rules, the same deal and dice for everyone that day
+  const kinds = resume ? resume.kinds : tut ? KT.KINDS.slice() : daily ? ['human', 'computer', 'computer', 'computer'] : st.kinds.slice();
   let hn = 0;
   const seats = kinds.map((k, i) => ({ kind: k, name: k === 'human' ? (kinds.filter(x => x === 'human').length > 1 ? 'Player ' + (++hn) : (st.name || 'You')) : 'Computer' }));
   let g = resume ? Object.assign({}, GAME, { setup: () => resume.state }) : GAME;
-  let rng = Math.random;
+  let rng = seeded(resume && Number.isInteger(resume.rs) ? resume.rs : daily ? daily.seed : newSeed());
   if (tut) { rng = COACH.rng(KT.SEED); g = KT.rigGame(g, rng); }
+  ui.rng = tut ? null : rng;
   // computers get their monster's name
   ui.restoring = !!resume;
   try {
     fixMons();
-    const options = tut ? Object.assign({}, KT.OPTIONS, { monsters: KT.monsters(st.mons[0]) }) : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons };
+    const dm = daily ? [st.mons[0]].concat([0, 1, 2, 3, 4, 5].filter(m => m !== st.mons[0])).slice(0, 4) : null;
+    const options = tut ? Object.assign({}, KT.OPTIONS, { monsters: KT.monsters(st.mons[0]) })
+      : daily ? { edition: KP.DAILY.edition, level: KP.DAILY.level, bay: true, duel: false, monsters: dm }
+      : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons };
     ui.tut = tut;
+    ui.game = meta;
     room = createLocal({ game: g, seats, options, botDelayMs: speedMs(), rng });
     ui.mode = 'local'; ui.endShown = false; ui.keep = new Set(); ui.lastRoll = null; ui.fxKey = '';
     if (!quiet) ui.marketSeen = [];
@@ -227,7 +262,7 @@ function startLocal(resume, quiet, tutorial) {
     // a resumed game is restored and drawn inside this try: a broken save fails here, not later
     room.start();
     if (resume && !quiet && (!snap || !snap.pub || !document.querySelector('#v-play #game'))) throw new Error('nothing drawn');
-  } catch (e) { ui.restoring = false; ui.tut = false; restoreFailed(); return; }
+  } catch (e) { ui.restoring = false; ui.tut = false; ui.game = null; restoreFailed(); return; }
   ui.restoring = false;
 }
 function restoreFailed() {
@@ -237,7 +272,7 @@ function restoreFailed() {
 }
 function closeRoom() {
   if (room && room.mode === 'local' && room.close) room.close();
-  room = null; snap = null; ui.mode = null;
+  room = null; snap = null; ui.mode = null; ui.game = null;
   clearTimeout(ui.autoDone);
   // the coach hides with its game (its place is kept: the saved tutorial game resumes it)
   ui.tut = false; if (tour && tour.active) tour.stop();
@@ -247,11 +282,13 @@ function endTutorial() { if (tour && (tour.active || tour.saved())) tour.finish(
 function onSnap(s) {
   const prev = snap && snap.pub ? snap.pub : null;
   snap = s;
+  try { track(prev, s); } catch (e) { /* the review and stats are extras */ }
   if (ui.mode === 'local' && room && room.state) {
     if (s.status === 'finished') store.saved = null;
-    else store.saved = Object.assign({ state: room.state, kinds: room.state.players.map(p => p.kind) }, ui.tut ? { tut: true } : {});
+    else store.saved = Object.assign({ state: room.state, kinds: room.state.players.map(p => p.kind), meta: ui.game }, ui.rng ? { rs: ui.rng.get() } : {}, ui.tut ? { tut: true } : {});
     save();
   }
+  if (s.pub && s.pub.over) recordGame();
   try { trackDiscards(prev, s.pub); } catch (e) { /* the pile is decoration */ }
   const was = ui.tab === 'play' ? grabMarket() : [];
   if (ui.tab === 'play') renderPlay();
@@ -318,8 +355,13 @@ async function act(a) {
   recordStudy(a);
   clearTimeout(ui.autoDone);
   if (ui.mode === 'local') {
+    // Undo: the table (and the dice stream's place) just before this move
+    const g = ui.game, before = g && undoMode() && room.state ? { state: JSON.parse(JSON.stringify(room.state)), rs: ui.rng.get(), study: store.study.length } : null;
+    // set before the move: the table redraws (and saves) inside room.act
+    const prevUndo = g ? g.undo : null, prevMoved = g ? g.moved : false;
+    if (g) { g.moved = true; if (before) g.undo = before; }
     const r = room.act(a, snap.mySeat);
-    if (!r.ok) { FX.play('error'); toast(r.message); }
+    if (!r.ok) { if (g) { g.undo = prevUndo; g.moved = prevMoved; } FX.play('error'); toast(r.message); }
   } else {
     // one move in flight at a time: a second tap before the room answers is dropped
     if (ui.acting) return;
@@ -371,6 +413,7 @@ function renderSetup(v) {
       <button class="btn small kindbtn" data-seat="${i}" ${i === 0 ? 'disabled' : ''}>${k === 'human' ? 'Person' : 'Computer'}</button></div>`).join('');
   v.innerHTML = `<div class="setup">
     <div class="hero"><img src="icon.svg" alt=""><div class="grow"><h1>King of Tokyo Lab</h1><p>Smash Tokyo with exact dice odds.</p></div>${KT && COACH ? '<button class="btn small" id="btn-rules0">Rules</button>' : ''}</div>
+    ${PF() ? `<div class="row pf-row"><button class="btn small grow pf-open" id="btn-stats0">${window.Profile.avatarSVG(window.Profile.avatar, 22)}My stats</button><button class="btn small grow" id="btn-daily0">${dailyDone() ? 'Daily ✓' : 'Daily game'}</button></div>` : ''}
     <div class="panel">
       <div class="row"><span class="label grow">Monsters</span>${qTip('Each extra “Person” seat is another player passing this phone. With 5 or 6 monsters, Tokyo Bay opens as a second spot in Tokyo.')}</div>
       <div class="seg" id="seg-n">${[2, 3, 4, 5, 6].map(n => `<button data-n="${n}" aria-pressed="${kinds.length === n}">${n}</button>`).join('')}</div>
@@ -398,7 +441,9 @@ function renderSetup(v) {
   v.querySelectorAll('.kindbtn').forEach(b => b.onclick = () => {
     const i = +b.dataset.seat; st.kinds[i] = st.kinds[i] === 'human' ? 'computer' : 'human'; save(); renderSetup(v);
   });
-  $('#btn-new').onclick = () => { if (store.saved && store.saved.tut) endTutorial(); store.saved = null; save(); startLocal(null); };
+  $('#btn-new').onclick = () => { if (store.saved) recordSaved(store.saved); if (store.saved && store.saved.tut) endTutorial(); store.saved = null; save(); startLocal(null); };
+  if ($('#btn-stats0')) $('#btn-stats0').onclick = () => openStats();
+  if ($('#btn-daily0')) $('#btn-daily0').onclick = () => startDaily();
   if ($('#btn-resume')) $('#btn-resume').onclick = () => { startLocal(store.saved); if (ui.tut && tour) tour.resume(); };
   if ($('#btn-rules0')) $('#btn-rules0').onclick = () => openRules();
   // first visit: offer the guided first game, once
@@ -641,6 +686,7 @@ function renderGame(v) {
     ${board}
     <div class="market" id="market" data-pile="${esc(discardFaces(pub).length + ':' + (pub.discardTop || ui.discards || []).join(','))}">${market}</div>
     <div class="status"><div class="grow" style="min-width:0"><div class="who">${who}</div></div><span class="sub">${sub}</span>
+      ${undoMode() ? `<button class="icon-btn" id="btn-undo" aria-label="Undo your last move" title="Undo" ${canUndo() ? '' : 'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>` : ''}
       <button class="icon-btn" id="btn-log" aria-label="Game log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
       <button class="icon-btn" id="btn-menu" aria-label="Game menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
     <div class="dice">${dice}</div>
@@ -752,7 +798,7 @@ function abilities(pub, me, ask) {
 
 function actionButtons(pub, me, ask) {
   const t = pub.t, p = pub.players[me];
-  if (pub.over) return `<button class="btn primary" id="btn-again">New game</button><button class="btn" id="btn-results">Results</button>`;
+  if (pub.over) return `<button class="btn primary" id="btn-again">New game</button><button class="btn" id="btn-results">Results</button>${ui.game && ui.game.tl.length > 1 ? '<button class="btn" id="btn-review">Review</button>' : ''}`;
   switch (ask) {
     case 'start': return `<button class="btn primary" id="btn-roll">Roll ${t && t.less ? (6 - t.less) : ''} dice</button>`;
     case 'roll': {
@@ -847,6 +893,8 @@ function wireGame(v, pub, me, ask) {
   on('#btn-sweep', () => act({ t: 'sweep' }));
   on('#btn-log', () => openSheet(`<h3>Game log</h3><div class="scroll" id="logscroll"><ul class="log">${logList(pub, me, 80)}</ul></div><button class="btn" onclick="document.getElementById('sheet').remove()">Close</button>`, el => { const s = $('#logscroll', el); s.scrollTop = s.scrollHeight; }));
   on('#btn-menu', () => gameMenu());
+  on('#btn-undo', () => undo());
+  on('#btn-review', () => reviewSheet());
   on('#btn-again', () => newGameFromEnd());
   on('#btn-results', () => showEnd());
   on('#odds', e => { if (!e.target.closest('.q')) oddsSheet(pub, me, ask); });
@@ -920,7 +968,7 @@ function cardSheet(id, where) {
     if (f && f.seat !== me) btn = `<button class="btn warm" id="btn-steal" ${myP.en >= cost ? '' : 'disabled'}>Take it · ${cost}⚡ to ${esc(pub.players[f.seat].name)}</button>`;
   }
   const m = STR.cards && STR.cards[id];
-  const stat = m ? `<div class="row small"><span class="muted grow">Hard computers who bought it won</span><b class="pct" style="color:${scale((m.win - 0.15) / 0.25)}">${pct(m.win)}</b>${qTip('Measured over ' + (STR.measured ? STR.measured.games : 'many') + ' four-player games between Hard computers; an average monster wins 25%. Cards bought by players already ahead score higher, so read it as a hint, not a law.')}</div>` : '';
+  const stat = m ? `<div class="row small"><span class="muted grow">Computers who bought it won</span><b class="pct" style="color:${scale((m.win - 0.15) / 0.25)}">${pct(m.win)}</b>${qTip('Measured over ' + (STR.measured ? STR.measured.cardGames || STR.measured.games : 'many') + ' four-player games between Easy computers, which buy cards at random, so every card gets tried; an average monster wins 25%. Cards bought by players already ahead score higher, so read it as a hint, not a law.')}</div>` : '';
   let amount = 0;
   const batt = id === 'monster-batteries' && pub && pub.edition === '2011' && btn.includes('btn-buy');
   openSheet(`${cardFace(id, 'pc big ' + (c.keep ? 'K' : 'D'), cost)}${stat}
@@ -1017,11 +1065,14 @@ function gameMenu() {
   const online = ui.mode === 'online';
   openSheet(`<h3>Game</h3>
     ${KT && COACH ? '<button class="btn" id="btn-rules1">Rules</button>' : ''}
+    ${PF() ? `<button class="btn pf-open" id="btn-stats1">${window.Profile.avatarSVG(window.Profile.avatar, 22)}My stats</button>` : ''}
     ${online ? `<span class="muted small">Room ${esc(snap.code || '')}</span><button class="btn danger" id="btn-quit">Leave room</button>` : '<button class="btn danger" id="btn-quit">Quit this game</button>'}
     <button class="btn ghost" id="btn-x">Close</button>`, el => {
     $('#btn-x', el).onclick = closeSheet;
     if ($('#btn-rules1', el)) $('#btn-rules1', el).onclick = () => { closeSheet(); openRules(); };
-    $('#btn-quit', el).onclick = () => { closeSheet(); if (online) leaveOnline(); else { if (ui.tut) endTutorial(); closeRoom(); store.saved = null; save(); renderPlay(); } };
+    if ($('#btn-stats1', el)) $('#btn-stats1', el).onclick = () => openStats();
+    // leaving a game after your first move counts as a loss in My stats
+    $('#btn-quit', el).onclick = () => { closeSheet(); if (online) leaveOnline(); else { recordGame(); if (ui.tut) endTutorial(); closeRoom(); store.saved = null; save(); renderPlay(); } };
   });
 }
 
@@ -1048,9 +1099,148 @@ function showEnd() {
   openSheet(`<div class="endcard"><div class="win">${w != null ? Art.monster(pub.players[w].mon, 64) : ''}<div><b>${esc(title)}</b><span class="muted">${pub.why === 'points' ? '20 points reached' : pub.why === 'last' ? 'Last monster standing' : 'Everyone fell at once'} · turn ${pub.turnNo}</span></div></div>
     <table class="res"><tr><th>Monster</th><th>★</th><th>♥</th><th>Cards</th></tr>${order.map(i => { const p = pub.players[i]; return `<tr><td>${esc(i === me ? 'You' : p.name)}</td><td>${p.vp}</td><td>${p.alive ? p.hp : 'out'}</td><td>${p.cards.length}</td></tr>`; }).join('')}</table>
     ${study}
-    <div class="row"><button class="btn primary grow" id="btn-again2">New game</button><button class="btn" id="btn-x">Close</button></div></div>`, el => {
+    ${statsLine()}
+    <div class="row"><button class="btn primary grow" id="btn-again2">New game</button>${ui.game && ui.game.tl.length > 1 ? '<button class="btn" id="btn-review2">Review</button>' : ''}<button class="btn" id="btn-x">Close</button></div></div>`, el => {
     $('#btn-x', el).onclick = closeSheet;
     $('#btn-again2', el).onclick = () => newGameFromEnd();
+    if ($('#btn-review2', el)) $('#btn-review2', el).onclick = () => reviewSheet();
+  });
+}
+
+// ------------------------------------------------------------------ Undo (local games, not the Daily or the guided game)
+function undoMode() { return ui.mode === 'local' && !!ui.game && !ui.tut && !ui.game.daily && !!ui.rng; }
+function canUndo() { return undoMode() && !!ui.game.undo && !!snap && !!snap.pub && !snap.pub.over; }
+// the table goes back to just before your last move, with the dice stream where it was (the same dice come back)
+function undo() {
+  if (!canUndo()) return;
+  const g = ui.game, u = g.undo;
+  closeSheet(); closePop();
+  const meta = Object.assign({}, g, { undo: null, helped: true, tl: g.tl.filter(f => f.n <= u.state.turnNo) });
+  store.study.length = Math.min(store.study.length, u.study);
+  store.keepSel = null; ui.lastRoll = null;
+  const wasSaved = { state: u.state, kinds: u.state.players.map(p => p.kind), meta, rs: u.rs };
+  startLocal(wasSaved, true);
+  toast('Took back your last move. This game now counts as “with help”.');
+}
+
+// ------------------------------------------------------------------ My stats (js/profile.js + js/kotprofile.js)
+// one result per game; quitting after your first move counts as a loss; Undo makes it "with help" (not rated);
+// the guided first game never counts
+function recordFrom(st, me, g, online) {
+  const P = PF();
+  if (!P || !g || g.recorded || g.tut) return;
+  if (!st.over && !g.moved) return;
+  g.recorded = true;
+  try {
+    const r = KP.result({ st, me, helped: g.helped, daily: !!g.daily, online, tokyoTurns: g.tokyoTurns });
+    if (g.daily) r.date = g.daily;   // a Daily finished after midnight still belongs to the day it was dealt
+    P.recordResult(r);
+  } catch (e) { /* the stats never stop the game */ }
+}
+function recordGame() {
+  if (!snap || !snap.pub || ui.tut || !ui.game) return;
+  if (ui.mode === 'local' && room && room.state) recordFrom(room.state, snap.mySeat, ui.game, false);
+  else if (ui.mode === 'online' && snap.pub.over && snap.mySeat >= 0) {
+    // online: once per room (a reload shows the same finished room again)
+    const key = (snap.code || '') + ':' + snap.pub.turnNo;
+    if (store.recOnline === key) return;
+    store.recOnline = key; save();
+    recordFrom(snap.pub, snap.mySeat, ui.game, true);
+  }
+}
+// a saved game replaced by a new one (setup's New game)
+function recordSaved(sv) {
+  if (!sv || sv.tut || !sv.state || !Array.isArray(sv.kinds)) return;
+  const me = sv.kinds.indexOf('human');
+  if (me >= 0) recordFrom(sv.state, me, cleanMeta(sv.meta), false);
+}
+function dailyDone() { try { return !!(PF() && window.Profile.daily.played()); } catch (e) { return false; } }
+function startDaily() {
+  const P = PF();
+  if (!P) return;
+  if (ui.mode === 'online') { toast('Leave the online room first.'); return; }
+  if (dailyDone()) { openStats('daily'); return; }
+  if (room && snap && snap.pub && !snap.pub.over) { toast('Finish or quit this game first.'); return; }
+  if (P.isOpen()) P.closePanel();
+  if (store.saved) { recordSaved(store.saved); store.saved = null; save(); }
+  const day = P.daily.date();
+  if (ui.tab !== 'play') setTab('play', true);
+  startLocal(null, false, false, { day, seed: (P.daily.seed(day, 'king-of-tokyo') >>> 0) || 1 });
+}
+function openStats(t) {
+  const P = PF();
+  if (!P) return;
+  closeSheet(); closePop();
+  P.openPanel(t ? { tab: t } : undefined);
+  if (P.isOpen()) { ui.pfOpen = true; history.pushState({ tab: ui.tab, modal: 'profile' }, '', '#' + ui.tab); }
+}
+// a line on the end card: how this game counted
+function statsLine() {
+  const g = ui.game;
+  if (!PF() || !g || ui.tut) return '';
+  const why = ui.mode === 'online' ? 'Counted in My stats (online).' : g.helped ? 'Counted as “with help” (Undo): not rated.' : g.daily ? 'Today’s Daily game is in My stats.' : 'Counted in My stats.';
+  return `<div class="row small muted"><span class="grow">${why}</span><button class="btn small pf-open" id="btn-stats2">My stats</button></div>`;
+}
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#btn-stats2')) openStats(); });
+
+// ------------------------------------------------------------------ the turn-by-turn timeline (end-of-game review)
+// one frame per turn: every monster's ♥ ★ ⚡, who is in Tokyo, and the key moments of the turn before
+const KEY_MOMENT = /enters Tokyo|moves from Tokyo|leaves Tokyo|out of Tokyo|knocked out|buys|wins|^deals /i;
+function frameOf(pub) {
+  return { n: pub.turnNo, c: pub.cur, tk: [pub.tokyo.city, pub.tokyo.bay], p: pub.players.map(p => [p.hp, p.vp, p.en, p.alive ? 1 : 0, p.cards.length]), m: [] };
+}
+function track(prev, s) {
+  const pub = s && s.pub, g = ui.game;
+  if (!pub || !pub.players) return;
+  if (ui.mode === 'online' && (!g || g.code !== s.code)) ui.game = newMeta({ code: s.code });
+  const G = ui.game;
+  if (!G) return;
+  const tl = G.tl, last = tl[tl.length - 1];
+  if (!last || last.n !== pub.turnNo || pub.over && !last.end) {
+    // the turn that just ended: its key log lines go on its frame
+    if (last) {
+      const lines = pub.log.filter(l => l.n === last.n && KEY_MOMENT.test(l.m)).slice(-6);
+      last.m = lines.map(l => (l.s >= 0 && pub.players[l.s] && !l.m.startsWith(pub.players[l.s].name + ' ') ? pub.players[l.s].name + ' ' : '') + l.m);
+      if (last.n === pub.turnNo) { Object.assign(last, frameOf(pub), { m: last.m, end: true }); return; }
+    }
+    const f = frameOf(pub);
+    if (pub.over) f.end = true;
+    tl.push(f);
+    if (tl.length > 160) tl.splice(0, tl.length - 160);
+    // a turn you start in Tokyo (for the achievement)
+    const me = s.mySeat;
+    if (!pub.over && pub.cur === me && me >= 0 && (pub.tokyo.city === me || pub.tokyo.bay === me)) G.tokyoTurns++;
+  } else last.p = frameOf(pub).p;
+}
+// the review: a star race (one line per monster), then step through the turns
+function reviewSheet() {
+  const g = ui.game;
+  if (!g || g.tl.length < 2 || !snap || !snap.pub) return;
+  const pub = snap.pub, me = snap.mySeat, tl = g.tl, P = pub.players;
+  let at = tl.length - 1;
+  const col = i => (MONSTERS[P[i].mon] ? MONSTERS[P[i].mon].color : '#888');
+  const W = 300, H = 120, x = k => 8 + k * (W - 16) / Math.max(1, tl.length - 1), y = v => H - 8 - Math.min(20, v) * (H - 16) / 20;
+  const lines = P.map((p, i) => `<polyline fill="none" stroke="${col(i)}" stroke-width="${i === me ? 3 : 2}" stroke-linejoin="round" points="${tl.map((f, k) => x(k).toFixed(1) + ',' + y(f.p[i] ? f.p[i][1] : 0).toFixed(1)).join(' ')}"/>`).join('');
+  const chart = cur => `<svg class="rv-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Stars by turn"><line x1="8" x2="${W - 8}" y1="${y(20)}" y2="${y(20)}" stroke="rgba(255,255,255,.25)" stroke-dasharray="4 4"/>${lines}<line class="rv-cur" x1="${x(cur)}" x2="${x(cur)}" y1="4" y2="${H - 4}" stroke="rgba(255,255,255,.6)"/></svg>`;
+  const body = k => {
+    const f = tl[k], nm = i => (i === me ? 'You' : esc(P[i].name));
+    const who = f.end ? 'End of the game' : f.c >= 0 && P[f.c] ? `Turn ${f.n}: ${nm(f.c)}` : `Turn ${f.n}`;
+    const rows = P.map((p, i) => { const q = f.p[i] || [0, 0, 0, 0, 0]; const tk = f.tk[0] === i ? ' <span class="rv-tk">CITY</span>' : f.tk[1] === i ? ' <span class="rv-tk bay">BAY</span>' : ''; return `<tr class="${q[3] ? '' : 'out'}${i === me ? ' me' : ''}"><td><span class="rv-dot" style="background:${col(i)}"></span>${nm(i)}${tk}</td><td>${q[3] ? q[0] : 'out'}</td><td>${q[1]}</td><td>${q[2]}</td><td>${q[4]}</td></tr>`; }).join('');
+    const moments = (tl[k].m || []).map(m => `<li>${esc(m)}</li>`).join('');
+    return `<div class="row"><b class="grow">${who}</b><span class="muted small">${k + 1} / ${tl.length}</span></div>
+      <table class="res"><tr><th>Monster</th><th>♥</th><th>★</th><th>⚡</th><th>Cards</th></tr>${rows}</table>
+      <ul class="log rv-m">${moments || (k < tl.length - 1 ? '<li class="muted">No big moments this turn.</li>' : '')}</ul>`;
+  };
+  openSheet(`<h3>Game review</h3><span class="muted small">★ by turn (dashed line = 20). Step through the turns below.</span>
+    <div id="rv-chart">${chart(at)}</div>
+    <div class="row"><button class="btn" id="rv-prev" aria-label="Previous turn">‹</button><input type="range" class="grow" id="rv-at" min="0" max="${tl.length - 1}" value="${at}" aria-label="Turn"><button class="btn" id="rv-next" aria-label="Next turn">›</button></div>
+    <div id="rv-body" class="rv-body">${body(at)}</div>
+    <button class="btn ghost" id="btn-x">Close</button>`, el => {
+    const go = k => { at = Math.max(0, Math.min(tl.length - 1, k)); $('#rv-at', el).value = at; $('#rv-chart', el).innerHTML = chart(at); $('#rv-body', el).innerHTML = body(at); };
+    $('#rv-prev', el).onclick = () => go(at - 1);
+    $('#rv-next', el).onclick = () => go(at + 1);
+    $('#rv-at', el).oninput = e => go(+e.target.value);
+    $('#btn-x', el).onclick = closeSheet;
   });
 }
 
@@ -1121,7 +1311,7 @@ function renderCards() {
   list.sort((a, b) => (cz.sort === 'cost' ? a.cost - b.cost || a.name.localeCompare(b.name) : val(b.id) - val(a.id)));
   const total = Object.values(CARDS).reduce((a, c) => a + c.copies, 0);
   v.innerHTML = `<div class="cardsv">
-    <div class="row"><span class="label grow">${EDITIONS[ed]} · ${total} cards</span>${qTip('Win % = how often Hard computers who bought the card went on to win, in measured four-player games (25% is average). Change the edition in Settings.')}</div>
+    <div class="row"><span class="label grow">${EDITIONS[ed]} · ${total} cards</span>${qTip('Win % = how often computers who bought the card went on to win, in measured four-player games (25% is average). Change the edition in Settings.')}</div>
     <div class="row"><div class="seg grow">${[['all', 'All'], ['keep', 'Keep'], ['discard', 'Discard']].map(([k, l]) => `<button data-f="${k}" aria-pressed="${cz.filter === k}">${l}</button>`).join('')}</div>
       <div class="seg" style="width:150px">${[['cost', 'Cost'], ['value', 'Win %']].map(([k, l]) => `<button data-s="${k}" aria-pressed="${cz.sort === k}">${l}</button>`).join('')}</div></div>
     <div class="scroll" style="flex:1"><div class="clist">${list.map(c => { const m = STR.cards && STR.cards[c.id]; return `<div class="crow" data-card="${c.id}"><span>${Art.cardIcon(c.id, 20)}</span>
@@ -1170,6 +1360,25 @@ function renderSettings() {
 }
 
 // ================================================================== boot
+if (KP) KP.init(() => startDaily());
+if (window.Profile) window.Profile.onChange(what => {
+  // the panel closed by ✕ / outside tap: drop the history entry it pushed
+  if (what === 'close' && ui.pfOpen) { ui.pfOpen = false; try { history.back(); } catch (e) { /* */ } }
+  if ((what === 'result' || what === 'me' || what === 'import' || what === 'reset') && ui.tab === 'play' && !room) renderPlay();
+});
+// a new deploy reloads the page by itself only when nothing would be lost
+if (window.PWA) window.PWA.safeToReload = () => {
+  if (ui.mode === 'online' || ui.sheetOpen || ui.pfOpen) return false;
+  if ((COACH && COACH.rulesOpen()) || (window.Profile && window.Profile.isOpen())) return false;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  if (ui.tut) return false;
+  // a game in progress is saved, but only the Play tab shows it moving: reload only away from it
+  if (ui.tab !== 'play') return true;
+  if (store.saved) return false;
+  return !room || !snap || !snap.pub || snap.pub.over;
+};
+if (history.state && history.state.modal) history.back();
 setTab((location.hash || '#play').slice(1), false);
 if (store.online) {
   ui.mode = 'online'; snap = { status: 'joining' }; renderPlay();
@@ -1178,4 +1387,4 @@ if (store.online) {
     renderPlay();
   }).catch(() => { store.online = false; save(); ui.mode = null; room = null; snap = null; renderPlay(); });
 }
-window.__kot = { get snap() { return snap; }, get room() { return room; }, act, get tour() { return tour; }, get tut() { return !!ui.tut; } };
+window.__kot = { get snap() { return snap; }, get room() { return room; }, act, get tour() { return tour; }, get tut() { return !!ui.tut; }, get game() { return ui.game; }, undo, canUndo, startDaily, reviewSheet, openStats, setTab };

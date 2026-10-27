@@ -1,0 +1,10 @@
+{
+  "repo": "king-of-tokyo",
+  "ready": "!!(window.__kot && document.querySelector('#v-play #btn-new, #v-play #btn-resume'))",
+  "play": [
+    "(async () => { const w = ms => new Promise(r => setTimeout(r, ms)); if (window.COACH) COACH.closeOffer(); const b = document.querySelector('#v-play #btn-new'); if (b) b.click(); if (window.COACH) COACH.closeOffer(); const K = window.__kot; for (let i = 0; i < 400; i++) { const s = K.snap; if (s && s.pub && s.pub.cur === s.mySeat && s.pub.ask && s.pub.ask.waiting.includes(s.mySeat)) break; await w(100); } window.__t = K.snap.pub.turnNo; for (let i = 0; i < 300; i++) { const s = K.snap; if (!s || !s.pub || s.pub.over || s.pub.turnNo > window.__t) break; const btn = ['#btn-roll', '#btn-done', '#btn-end', '#btn-stay', '#btn-pass'].map(q => document.querySelector('#v-play ' + q)).find(x => x && !x.disabled); if (btn) btn.click(); await w(150); } })()"
+  ],
+  "played": "(() => { const s = window.__kot.snap; return !!(s && s.pub && s.pub.log.some(l => l.n > window.__t && l.s !== s.mySeat && /^(rolls|rerolls)/.test(l.m))); })()",
+  "safe": "window.__kot.setTab('settings')",
+  "debug": "JSON.stringify((() => { const s = window.__kot.snap; return s && s.pub ? { cur: s.pub.cur, me: s.mySeat, turn: s.pub.turnNo, before: window.__t, ask: s.pub.ask && s.pub.ask.type, last: s.pub.log.slice(-3).map(l => l.m) } : null; })())"
+}
