@@ -340,6 +340,8 @@ function fxReact(prev, s, was) {
       if (k === 'vp' && x.s === me && x.n >= 3) big = monEls(me)[0] || board;
     }
     else if (x.e === 'buy') {
+      // a rival's new card: one line saying what it does (you read your own when you buy it)
+      if (x.s !== me && CARDS[x.id] && pub.players[x.s] && !ui.restoring) { toast(pub.players[x.s].name + ' buys ' + CARDS[x.id].name + ': ' + CARDS[x.id].text); const t = $('.toast'); if (t) t.style.pointerEvents = 'none'; }
       const o = (was || []).find(w => w.id === x.id), dest = x.s === me ? ($('#v-play .myarea .mine') || monEls(x.s)[0]) : monEls(x.s)[0];
       if (o) glide(o, dest);
       monEls(x.s).forEach(el => FX.pop(el)); if (x.s === me) { const c = [...document.querySelectorAll('#v-play .mine .chipcard[data-card]')].pop(); if (c) FX.pop(c); } }
