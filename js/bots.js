@@ -15,6 +15,12 @@
   // claw: share of an outside attacker's final dice that are claws (measured by tools/measure-levels.js)
   // stayKo: Hard leaves Tokyo when its knock-out chance before its next turn is above this
   const CFG = { claw: 0.13, stayKo: 0.22 };
+  // Hard: a knock-out of the last rival, or a set that reaches 20 stars, wins the game
+  const KILL_WIN = 12, WIN_BONUS = 6;
+  // Hard: with fewer rivals left, each claw (and the first claw at Tokyo, to take it over) is worth more.
+  // Measured 2026-10-27 (tools/ladder.js): one-on-one vs Medium 66% -> 85%, three monsters 53% -> 58%.
+  //   rivals:            1     2     3+
+  const CLAW_BASE = [0, 0.8, 0.4, 0.22], MOVE_IN = [0, 2, 1.5, 1];
 
   // distribution of total damage the monsters before my next turn deal to me if I stay in Tokyo
   function damageDist(s, me) {
@@ -62,13 +68,18 @@
 
   // per-face values for this monster's turn, as small arrays so solvers can be cached
   function turnValues(s, i, lvl) {
+    // 'advice' (the best-keep dots and the Study numbers) = Hard's values with energy kept at its old weight
+    const advice = lvl === 'advice';
+    if (advice) lvl = 'hard';
     const p = s.players[i];
     const inT = E.inTokyo(s, i);
     const mx = E.maxHp(s, i);
     const n = E.diceCount(s, i, s.t ? s.t.less : 0);
     const missing = mx - p.hp;
     const opps = E.aliveSeats(s).filter(j => j !== i);
-    const enW = lvl === 'hard' ? (s.players[i].vp >= 16 ? 0.25 : 0.5) : 0.4;
+    // Hard values a die's energy low: measured 2026-10-27, 0.5 -> 0.15 lifted Hard vs Medium one-on-one 62% -> 66%
+    // and vs three Mediums 42% -> 47% (energy buys cards, but stars, hearts and claws on the dice count for more)
+    const enW = advice ? (s.players[i].vp >= 16 ? 0.25 : 0.5) : lvl === 'hard' ? (s.players[i].vp >= 16 ? 0.1 : 0.15) : 0.4;
     // hearts: value of the h-th heart
     const hv = [];
     for (let h = 1; h <= n; h++) {
@@ -93,13 +104,14 @@
         for (const j of targets) {
           const hpj = s.players[j].hp;
           const dmgBefore = c - 1 + extra, dmgAfter = c + extra;
-          v += 0.22;
-          if (dmgAfter >= hpj && dmgBefore < hpj) v += lvl === 'hard' ? 2.5 + s.players[j].vp * 0.08 : 1.2;
+          v += lvl === 'hard' && !advice ? CLAW_BASE[Math.min(3, opps.length)] : 0.22;
+          // Hard: knocking out the last rival wins the game on the spot
+          if (dmgAfter >= hpj && dmgBefore < hpj) v += lvl === 'hard' ? (opps.length === 1 && !advice ? KILL_WIN : 2.5 + s.players[j].vp * 0.08) : 1.2;
         }
         if (!inT && !nova && targets.length && c === 1) {
           // first claw against Tokyo: a chance the occupant leaves and I move in
           const want = p.hp >= 7 ? 0.6 : p.hp >= 5 ? 0.2 : -0.4;
-          v += lvl === 'hard' ? want : 0.2;
+          v += lvl === 'hard' ? want * (advice ? 1 : MOVE_IN[Math.min(3, opps.length)]) : 0.2;
         }
         if (!inT && !targets.length && c === 1) {
           // Tokyo is empty: I'll enter anyway; claws do nothing now
@@ -109,11 +121,15 @@
       cv.push(Math.round(v * 20) / 20);
     }
     const vpW = 1;
-    return { n, enW, hv, cv, vpW, omni: E.has(s, i, 'omnivore') > 0, gourmet: E.has(s, i, 'gourmet'), quills: E.has(s, i, 'poison-quills'), cd: E.has(s, i, 'complete-destruction') };
+    // Hard: dice that take it to 20 stars win at the end of this turn (if it is still standing)
+    const toWin = lvl === 'hard' && !advice ? 20 - p.vp : 99;
+    return { n, enW, hv, cv, vpW, toWin, omni: E.has(s, i, 'omnivore') > 0, gourmet: E.has(s, i, 'gourmet'), quills: E.has(s, i, 'poison-quills'), cd: E.has(s, i, 'complete-destruction') };
   }
   function valueFn(tv) {
     return c => {
-      let v = D.setVp(c) * tv.vpW;
+      const sv = D.setVp(c);
+      let v = sv * tv.vpW;
+      if (tv.toWin <= 6 && sv >= tv.toWin) v += WIN_BONUS;
       if (c[0] >= 3) v += 2 * tv.gourmet;
       if (tv.omni && c[0] && c[1] && c[2]) v += 2;
       if (tv.cd && c[0] && c[1] && c[2] && c[3] && c[4] && c[5]) v += 9 * tv.cd;
@@ -126,7 +142,7 @@
   }
   function solverFor(s, i, lvl) {
     const tv = turnValues(s, i, lvl);
-    const key = [lvl, tv.enW, tv.hv.join(','), tv.cv.join(','), tv.omni, tv.gourmet, tv.quills, tv.cd].join('/');
+    const key = [lvl, tv.toWin <= 6 ? tv.toWin : 9, tv.enW, tv.hv.join(','), tv.cv.join(','), tv.omni, tv.gourmet, tv.quills, tv.cd].join('/');
     return { sv: cachedSolver(tv.n, key, valueFn(tv)), tv };
   }
 
@@ -374,7 +390,7 @@
   function advise(s, i) {
     const t = s.t;
     if (!t || !t.dice.length) return null;
-    const { sv, tv } = solverFor(s, i, 'hard');
+    const { sv, tv } = solverFor(s, i, 'advice');
     const faces = t.dice.map(d => d.f);
     const counts = D.countsOf(faces);
     const r = Math.min(2, t.rerolls);

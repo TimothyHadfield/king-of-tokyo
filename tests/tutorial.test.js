@@ -62,7 +62,7 @@ test('a different keep still gets the scripted reroll faces, in order', () => {
   assert.equal(s.t.rerolls, 0);
 });
 
-test('the first computer hits you in Tokyo and you are asked to stay or leave; your next roll is claws', () => {
+test('the first computer hits you in Tokyo and you are asked to stay or leave; the other computer is calm; your next roll is four 3s and two claws', () => {
   let { g, s, rng } = newTut();
   s = act(g, s, 0, { t: 'roll' }, rng);
   s = act(g, s, 0, { t: 'reroll', keep: [0, 1, 3], use: 'normal' }, rng);
@@ -74,15 +74,12 @@ test('the first computer hits you in Tokyo and you are asked to stay or leave; y
   assert.ok(s.players[0].hp <= 8, 'took the claws: ' + s.players[0].hp);
   s = act(g, s, 0, { t: 'yield', leave: false }, rng);
   s = bots(g, s, rng);
-  for (let k = 0; k < 5 && s.ask && s.ask.type === 'yield' && s.ask.seats.includes(0); k++) { s = act(g, s, 0, { t: 'yield', leave: false }, rng); s = bots(g, s, rng); }
-  if (s.players[0].alive) {
-    assert.equal(s.cur, 0);
-    assert.equal(s.ask.type, 'start');
-    assert.equal(s.turnNo, 4);
-    assert.ok(s.players[0].vp >= 6, 'started in Tokyo: +2');
-    s = act(g, s, 0, { t: 'roll' }, rng);
-    assert.equal(faces(s), 'CCCEH1');
-  }
+  assert.equal(s.cur, 0, 'no second hit before your turn');
+  assert.equal(s.ask.type, 'start');
+  assert.equal(s.turnNo, 4);
+  assert.ok(s.players[0].vp >= 6, 'started in Tokyo: +2');
+  s = act(g, s, 0, { t: 'roll' }, rng);
+  assert.equal(faces(s), '3333CC');
 });
 
 test('whatever the computer decides, its claws reach you and you get the stay-or-leave choice (40 different streams)', () => {
@@ -98,10 +95,73 @@ test('whatever the computer decides, its claws reach you and you get the stay-or
   }
 });
 
-test('later turns are not scripted', () => {
-  const st = { ask: { type: 'start' }, t: { seat: 0, dice: [], rerolls: 0 }, turnNo: 7, over: false };
+test('nothing is stacked after the round of your 4th turn', () => {
+  const st = { ask: { type: 'start' }, t: { seat: 0, dice: [], rerolls: 0 }, turnNo: KT.LAST + 1, over: false, players: [{ hp: 10, alive: true }], tokyo: { city: -1, bay: -1 } };
   assert.equal(KT.rig(st, 0, { t: 'roll' }), null);
-  assert.equal(KT.rig(Object.assign({}, st, { turnNo: 2 }), 2, { t: 'roll' }), null);
+  assert.equal(KT.rig(Object.assign({}, st, { turnNo: 20 }), 2, { t: 'roll' }), null);
+});
+
+// play the whole guided game the way the coach says (or another way), computers included
+function playTut(opts) {
+  const o = Object.assign({ buy: true, stay1: true, stay2: false, shift: 0, monster: 4 }, opts);
+  const rng = COACH.rng(KT.SEED);
+  const g = KT.rigGame(GAME, rng);
+  let s = g.setup(3, Object.assign({}, KT.OPTIONS, { monsters: KT.monsters(o.monster) }), rng, seats());
+  const seen = { yields: 0, minHp: 10, healed: false, bought: null, leftOnHit2: false, inTokyoT4: false };
+  let shifted = false;
+  for (let k = 0; k < 2000 && !s.over; k++) {
+    const who = g.toAct(s);
+    if (!who.includes(0)) {
+      if (!shifted && s.turnNo === 2) { for (let j = 0; j < o.shift * 7; j++) rng(); shifted = true; }
+      const b = who[0];
+      s = g.apply(JSON.parse(JSON.stringify(s)), b, g.bot({ state: s, pub: g.publicView(s), mine: g.privateView(s, b) }, b, rng), rng);
+      continue;
+    }
+    const a = s.ask.type;
+    let act;
+    if (a === 'start') { if (s.turnNo === 4) seen.inTokyoT4 = s.tokyo.city === 0; act = { t: 'roll' }; }
+    else if (a === 'roll') act = s.turnNo === 1 && s.t.rerolls === 2 ? { t: 'reroll', keep: [0, 1, 3], use: 'normal' } : { t: 'done' };
+    else if (a === 'buy') {
+      const i = s.market.indexOf('poison-quills');
+      if (o.buy && s.turnNo === 1 && i >= 0 && s.players[0].en >= 3) { act = { t: 'buy', i }; seen.bought = 'poison-quills'; }
+      else act = { t: 'end' };
+    } else if (a === 'yield') {
+      seen.yields++;
+      const leave = seen.yields === 1 ? !o.stay1 : !o.stay2;
+      if (seen.yields === 2 && leave) seen.leftOnHit2 = true;
+      act = { t: 'yield', leave };
+    } else act = GAME.bot({ state: s, pub: g.publicView(s), mine: g.privateView(s, 0) }, 0, rng);
+    const hp0 = s.players[0].hp;
+    s = g.apply(JSON.parse(JSON.stringify(s)), 0, act, rng);
+    if (s.players[0].hp > hp0 && s.turnNo === 7) seen.healed = true;
+    seen.minHp = Math.min(seen.minHp, s.players[0].hp);
+  }
+  return { s, seen };
+}
+
+test('the coach’s way: buy Poison Quills, stay, leave on the 2nd hit, heal, and win with 20 ★ on your 4th turn', () => {
+  const { s, seen } = playTut({});
+  assert.equal(seen.bought, 'poison-quills');
+  assert.equal(seen.yields, 2, 'asked to stay or leave twice');
+  assert.ok(seen.inTokyoT4, 'you start your 2nd turn in Tokyo');
+  assert.ok(seen.leftOnHit2, 'left Tokyo on the 2nd hit');
+  assert.ok(seen.healed, 'healed on your 3rd turn');
+  assert.ok(seen.minHp >= 3, 'never below 3 ♥: ' + seen.minHp);
+  assert.ok(s.over, 'game over');
+  assert.deepEqual(s.winners, [0]);
+  assert.equal(s.why, 'points');
+  assert.ok(s.players[0].vp >= 20 && s.turnNo <= 11, 'won on turn ' + s.turnNo + ' with ' + s.players[0].vp);
+});
+
+test('the guided game is won whatever the computers decide (40 streams, 6 monsters picked, other choices)', () => {
+  for (let shift = 0; shift < 40; shift++) {
+    const variants = [{}, { buy: false }, { stay2: true }, { buy: false, stay2: true }];
+    const v = Object.assign({ shift, monster: shift % 6 }, variants[shift % 4]);
+    const { s, seen } = playTut(v);
+    assert.ok(seen.minHp >= 1, 'stream ' + shift + ': knocked out');
+    assert.deepEqual(s.winners, [0], 'stream ' + shift + ' ' + JSON.stringify(v) + ': winners ' + s.winners + ' on turn ' + s.turnNo + ', vp ' + s.players.map(p => p.vp));
+    assert.ok(s.turnNo <= 11, 'stream ' + shift + ': won late, turn ' + s.turnNo);
+  }
 });
 
 test('the rules sheet covers the whole base game', () => {
@@ -115,7 +175,7 @@ test('the rules sheet covers the whole base game', () => {
 test('the coach script: every step has words, and action steps wait on the game', () => {
   const ctx = { pub: () => null, me: () => 0, ask: () => null, inTokyo: () => false };
   const st = KT.steps(ctx);
-  assert.ok(st.length >= 12);
+  assert.ok(st.length >= 24);
   for (const s of st) assert.ok((s.text || s.html || '').length > 5);
   for (const s of st) if (s.text) assert.ok(s.text.split(/\s+/).length <= 40, 'too long: ' + s.text);
 });
