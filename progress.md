@@ -1,7 +1,7 @@
 # King of Tokyo Lab: progress
 
 ## START HERE
-Read this file, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated 2026-10-27.
+Read this file, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated 2026-10-27 (improve pass, live at f420143).
 Live: https://timothyhadfield.github.io/king-of-tokyo/ · Repo: TimothyHadfield/king-of-tokyo (public)
 
 ## Goal right now
@@ -16,7 +16,6 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | Odds: best keep dots, points lost, KO risk, stay value, card win % | Done |
 | Odds tab (real-table dice helper + Tokyo calculator), Cards tab, Settings | Done |
 | Online rooms (createOnline, gameId `king-of-tokyo`) | Done; `tests/two-browsers.mjs` (two WebKit browsers: create, join by code, reload mid-game, both end identical) passed |
-| Measured strength (400 games each vs three Mediums) | Easy 4.8%, Medium 23.5%, Hard 39%; Hard beats Easy 68% one-on-one |
 | Screen tests | `tests/ui-play.mjs`: full games at 393 px WebKit (incl. 6 monsters + reload) and 1280 px Chromium, no console errors, no overflow |
 | QA pass 1 fixes (2026-10-20) | Done; `tests/ui-fixes.mjs` (14 checks, all seen failing on the old build): double-tap guard, broken-save restore, lobby monsters, 2-player switch off on 2011, Back closes sheet, code with spaces, single toasts, kept dice after reload, Join above the fold at 6, Odds at 0 rerolls |
 | Own SVG art (6 monsters, dice faces, card icons, skyline) | Done |
@@ -25,7 +24,9 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 | Weird-case pass (2026-10-20) | Done: 44 scenarios, 10 failed on the old build, all fixed (table below). New `tests/edge-ui.mjs` |
 | Visibility pass (2026-10-20) | Done: Tokyo board keeps its true 2:1 shape at every size and names who is in City/Bay in full; rival numbers 12 px+, tags 10 px+, phone sale-card names 10 px; all my keep cards + ability buttons on screen (overlapping strips, a thin strip opens the full list); rivals' cards stay on their own board; laptop sale cards show full rules text; landscape sheets scroll. New `tests/layout-ui.mjs` (7 sizes; old build 42 fails, new ALL PASS) |
 | Visual design pass (2026-10-20) | Done: phone sale cards get a faint icon watermark, readable "· N left" on Reroll, Sweep tile shows ⚡ 2 / Sweep, laptop Tokyo scene big + centred, dice 66 px, sale-card text no longer clipped, log 13 px, no "Gigazaur / Gigazaur" subtitle, no "You You reaches" in the log |
-| Rules sheet + guided first game (2026-10-27) | Done: pilot of the shared `_coach` kit (repo game-coach). Rules sheet in our own words (9 sections) from setup "Rules", the ⋯ game menu and Settings → How to play. First visit offers "New to King of Tokyo?" once; "Teach me" starts you + 2 Easy computers (2016 rules) with stacked dice and a 17-step coach; resumes after reload; Settings → Replay tutorial. Tests `tests/tutorial.test.js` (8, node) + `tests/coach-ui.mjs <url>` (393/320/659×393 WebKit, 1280/1440 Chromium) |
+| Rules sheet + guided first game (2026-10-27) | Done: pilot of the shared `_coach` kit (repo game-coach). Rules sheet in our own words (9 sections) from setup "Rules", the ⋯ game menu and Settings → How to play. First visit offers "New to King of Tokyo?" once; "Teach me" starts you + 2 Easy computers (2016 rules) with stacked dice; resumes after reload; Settings → Replay tutorial. Tests `tests/tutorial.test.js` (10, node) + `tests/coach-ui.mjs <url>` (393/320/659×393 WebKit, 1280/1440 Chromium) |
+| Improve pass (2026-10-27, commits f87860f..f420143) | Done, live. Guided game now 27 steps through a whole game: buy Poison Quills, stay, leave on the 2nd hit, heal, win with 20 ★ on your 4th turn (rigged dice hold for 40 computer streams). Hard rebuilt (beats Medium 83%). Medium now buys ~5 cards a game (was 1). `_profile` 1.1.0 (My stats, 10 achievements, Daily game), `_pwa` 1.2.0 (offline, 18/18 pwa-check), Undo vs computer (same dice come back), end-of-game Review (star race + turn stepper), laptop layout with the log under the table (900–1699 px, 700+ tall), bigger laptop portraits, claw-swipe hit animation, rival-buys-a-card toast, rules tabs wrap on phone |
+| Measured ladder (2026-10-27, `node tools/measure-levels.js 1000 4000`, `tools/ladder.js`) | 1v1: Hard vs Medium 83.1%, Hard vs Easy 85.3%, Medium vs Easy 62.3%. vs three Mediums: Easy 2.2%, Medium 23.9%, Hard 37.8%. Profile ratings 1200/1670/1770. `tests/ladder.test.js` guards it |
 
 ## Authorized next steps
 - (none pending from Tim)
@@ -54,8 +55,14 @@ King of Tokyo to play and study: exact rules (2016 default, 2011 switch), comput
 - The Tokyo standee stomps only when the occupant changes (`ui.tokyoSeen`). Each die's tilt (`--tilt`) is seeded from turn/roll/index, so redraws don't wobble.
 - The local Python `http.server` drops connections under Chromium's burst (`ERR_CONNECTION_REFUSED` → pageerror). Use a node static server for desktop screen tests.
 - Worktrees go in `C:/Users/timha/AppData/Local/Temp/claude/wt/`, never under `.claude`.
+- **Seeded dice (local games)**: app.js `seeded()` (mulberry32) is the room rng; its position `rs` is saved in `store.saved` with `meta` (Undo snapshot, helped/recorded/moved flags, review timeline `tl`). Undo restarts the room from the snapshot state + `rs`, so the same dice come back. The tutorial keeps `COACH.rng` and has no Undo; the Daily seeds from `Profile.daily.seed(day,'king-of-tokyo')` and has no Undo.
+- **Bots `'advice'` level**: the best-keep dots and Study numbers use Hard's OLD values (`turnValues(..., 'advice')`), so retuning Hard doesn't move the advice. Retune Hard via `CLAW_BASE`/`MOVE_IN`/`KILL_WIN`/`WIN_BONUS` and rerun `node --test tests/ladder.test.js`.
+- **Card win %** now comes from all-Easy 4-player games (Easy buys at random, so all 64 cards get 30+ buys); Hard/Medium games bought too few cards.
+- **My stats**: recorded once per game (`meta.recorded`); quit after a move = loss; Undo = mode "help" (unrated); `meta.tut` games never count; online recorded once per `code:turnNo` (`store.recOnline`). `PWA.safeToReload` is false on Play while a saved game exists (the kit's check requires it).
+- Kit copies added: `js/profile.js`, `css/profile.css`, `js/pwa.js`, `sw.js`, `tools/pwa-check.mjs`, `tools/make-icons.mjs` (never edit; re-copy). Bump `data-version` on the pwa.js tag with each deploy. Rules-tab wrap is a game-side override in style.css (`.coach-rules .coach-rules-nav`) until the `_coach` kit fixes it.
+- `tests/ui-fixes.mjs` "no console errors" is flaky (1 in 3): WebKit logs "…due to access control checks" when a reload cancels pwa.js's page check. Not a player-visible error.
 - **Tutorial**: `js/coach.js` + `css/coach.css` are copies of `Board and Card Games/_coach` (repo game-coach): never edit them here; fix the kit and re-copy. The tutorial lives in `js/tutorial.js`: `SEED = 11` (you go first, a 3-cost card on sale) and `SCRIPT` stacks your first rolls and one computer's claws through `rigGame` (engine untouched). Changing the engine's rng order or card deck can break the stacked deal: `tests/tutorial.test.js` catches it. The save carries `tut:true` so a reload re-rigs it. Offer key `coach-offer:kot-first-game`, tour key `coach:kot-first-game` in localStorage.
-- **Layout (visibility pass)**: the board sits in `.bwrap` (a size container); `.board` is `min(100cqw, 200cqh)` at 2:1 and is itself a container, so tag/standee/plate sizes use `cqh` and a `@container (max-height: 100px)` rule (small board: names on the bottom edge, 22 px standee). `.market` is `display: contents`: deck, 3 cards and pile are placed straight on the `#game` grid (areas deck/c1/c2/c3/pile). Card rows overlap to fit using `--n` (card count, set inline by app.js). The laptop log side panel appears only at ≥1700 px (`SIDE` matchMedia in app.js redraws on change); below that the log is behind its button. Run `tests/layout-ui.mjs <url>` after any layout change.
+- **Layout (visibility pass)**: the board sits in `.bwrap` (a size container); `.board` is `min(100cqw, 200cqh)` at 2:1 and is itself a container, so tag/standee/plate sizes use `cqh` and a `@container (max-height: 100px)` rule (small board: names on the bottom edge, 22 px standee). `.market` is `display: contents`: deck, 3 cards and pile are placed straight on the `#game` grid (areas deck/c1/c2/c3/pile). Card rows overlap to fit using `--n` (card count, set inline by app.js). The log side panel (with odds) appears at ≥1700 px (`SIDE` matchMedia in app.js redraws on change); at 900–1699 px and 700+ px tall the same `#g-side` log runs under the table (CSS only); shorter laptops keep the log behind its button. Run `tests/layout-ui.mjs <url>` after any layout change.
 
 ## Decisions
 - 2016 rules by default; 2011 as a Settings switch (names, costs, texts, entry rule, damage-style cards).
@@ -95,7 +102,8 @@ Others' sounds play at 0.85 volume. Button taps: fx.js default, skipping dice.
 - Redraw speed: script + layout measured ~3× faster after the partial redraw (65→19 ms, 171→57 ms); paint time not measurable in headless WebKit on this laptop, and not tried on a real phone.
 - Weird-case pass not tried: two tabs on one save, online opponent going offline/AFK.
 - Table look: the card animations (deal/flip/slide) were seen only in headless shots, not watched in motion on a phone.
-- Tutorial: not tried on a real iPhone; the guided game stops teaching after your 2nd turn (card buying, healing, knock-outs and winning are only in the Rules sheet). Rules section chips scroll sideways on phone (Knock-out/End/Options off screen until scrolled).
+- Tutorial: not tried on a real iPhone. Knock-outs are only in the Rules sheet.
+- Improve pass: offline install not tried on a real iPhone home screen; claw swipe seen only in a still shot; the Daily's "same dice for everyone" holds only if players make the same moves (bots share the stream); Hard still buys only ~0.7 cards a game.
 
 ## Weird-case scenarios (2026-10-20)
 44 tested (full list in the manager scratchpad `edge/king-of-tokyo/scenarios.md`). Failed on the old build, now fixed:
