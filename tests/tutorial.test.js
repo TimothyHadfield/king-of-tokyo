@@ -172,6 +172,18 @@ test('the rules sheet covers the whole base game', () => {
   for (const fact of ['10 ♥', '20 ★', '2 ★', '1 ★', 'Tokyo Bay', '2 ⚡', 'Keep', 'Discard', 'four 2s = 3 ★']) assert.ok(all.includes(fact), 'missing fact: ' + fact);
 });
 
+test('the rules sheet links real videos that open in a new tab', () => {
+  const r = KT.rules(null);
+  const v = r.sections.find(x => x.id === 'videos');
+  assert.ok(v, 'no Videos section');
+  const links = [...v.html.matchAll(/<a [^>]*href="([^"]+)"[^>]*>/g)];
+  assert.ok(links.length >= 2 && links.length <= 5, 'want 2-5 videos, got ' + links.length);
+  for (const m of links) {
+    assert.match(m[1], /^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/);
+    assert.ok(/target="_blank"/.test(m[0]) && /rel="noopener"/.test(m[0]), 'opens in a new tab: ' + m[0]);
+  }
+});
+
 test('the coach script: every step has words, and action steps wait on the game', () => {
   const ctx = { pub: () => null, me: () => 0, ask: () => null, inTokyo: () => false };
   const st = KT.steps(ctx);

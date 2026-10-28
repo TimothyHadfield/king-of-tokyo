@@ -190,6 +190,12 @@
         { id: 'options', short: 'Options', title: 'Options on this site', html: `<ul><li><b>2011 deck</b> (Settings): the first edition's card names and costs. With it, you need a claw to move into an empty Tokyo.</li>
           <li><b>Two-player variant</b> (Settings, 2016 deck): with 2 monsters, Tokyo pays 1 ⚡ instead of ★ for moving in and for starting a turn there.</li>
           <li><b>Tokyo Bay</b> can be switched off for 5–6 monsters.</li></ul>` },
+        { id: 'videos', short: 'Videos', title: 'Learn from videos', html: `<p>Videos open on YouTube in a new tab.</p><ul>
+          <li><a href="https://www.youtube.com/watch?v=DjfsX847nb0" target="_blank" rel="noopener">How to play</a> · IELLO, the publisher</li>
+          <li><a href="https://www.youtube.com/watch?v=RWYGlPf6IzE" target="_blank" rel="noopener">The rules in 3 minutes</a> · The Rules Girl</li>
+          <li><a href="https://www.youtube.com/watch?v=ovb4tLs_iZs" target="_blank" rel="noopener">4 strategy tips</a> · Tozat Xemtuhoken</li>
+          <li><a href="https://www.youtube.com/watch?v=02UioqEB0Tc" target="_blank" rel="noopener">The Power Up! expansion (evolutions) with a playthrough</a> · Richard Learns Games</li>
+          <li><a href="https://www.youtube.com/watch?v=KN0OjRLNd10" target="_blank" rel="noopener">Power Up! review</a> · The Dice Tower</li></ul>` },
       ],
       foot: 'Fan-made summary in our own words, not the publisher’s rulebook.',
     };
