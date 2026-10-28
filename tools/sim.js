@@ -4,10 +4,10 @@ const { game } = require('../js/game.js');
 
 function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
-function playGame({ n = 4, levels, seed = 1, edition = '2016', copy = false, onStep, maxSteps = 20000 } = {}) {
+function playGame({ n = 4, levels, seed = 1, edition = '2016', copy = false, onStep, maxSteps = 20000, evo = false } = {}) {
   const rng = mulberry(seed);
   const seats = Array.from({ length: n }, (_, i) => ({ kind: 'computer', name: 'C' + (i + 1) }));
-  let s = game.setup(n, { edition, levels: levels || Array(n).fill('hard') }, rng, seats);
+  let s = game.setup(n, Object.assign({ edition, levels: levels || Array(n).fill('hard') }, evo ? { evo: true } : {}), rng, seats);
   let steps = 0;
   while (!game.isOver(s)) {
     const toAct = game.toAct(s);

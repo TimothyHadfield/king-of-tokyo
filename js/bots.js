@@ -3,9 +3,9 @@
    rerolls ahead with situation-aware values, Medium one reroll ahead with fixed values, Easy keeps
    greedily with some randomness. Strengths are measured by tools/measure-levels.js. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./cards.js'), require('./engine.js'), require('./dice.js'));
-  else root.KotBots = factory(root.KotCards, root.KotEngine, root.KotDice);
-})(typeof self !== 'undefined' ? self : this, function (Cards, E, D) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./cards.js'), require('./engine.js'), require('./dice.js'), require('./evolutions.js'));
+  else root.KotBots = factory(root.KotCards, root.KotEngine, root.KotDice, root.KotEvo);
+})(typeof self !== 'undefined' ? self : this, function (Cards, E, D, Evo) {
   'use strict';
   const { CARDS } = Cards;
   const FI = D.FI;
@@ -369,8 +369,154 @@
     return { t: 'mimic', k: best ? best.k : opts[0].k };
   }
 
+  // ---------------------------------------------------------------- evolutions (only when the option is on)
+  // rough worth of a permanent evolution, for Icy Reflection's pick
+  const EVO_KEEP = { 'alpha-male': 2, 'i-am-the-king': 2, 'defender-of-tokyo': 1.5, 'heat-vision': 1, 'gamma-breath': 2.5, 'tail-sweep': 1.5,
+    'play-with-your-food': 1, 'feline-motor': 1, 'mouse-hunter': 1.5, 'meow-missile': 2, 'adapting-technology': 1, 'funny-looking': 1.2,
+    'mothership-support': 2, 'superior-alien-technology': 2, 'programmed-to-destroy': 1.5, 'breath-of-doom': 1.5, 'lightning-armor': 1.5,
+    'claws-of-steel': 1.5, 'target-acquired': 1, 'miraculous-catch': 1.5, 'black-diamond': 1.5, 'chest-thumping': 1, 'exotic-arms': 0.2 };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  // would the engine accept this move now? (tried on a copy, so nothing here can stall a game)
+  function legal(s, seat, act) { try { E.apply(clone(s), seat, act, () => 0.5); return true; } catch (e) { return false; } }
+  // the best die change from Gamma Breath / Tail Sweep / Saurian Adaptability / Mecha Blast once the rolling is done
+  function evoDice(s, i, lvl) {
+    const t = s.t, p = s.players[i];
+    const tv = turnValues(s, i, lvl === 'easy' ? 'medium' : lvl);
+    const value = valueFn(tv);
+    const faces = t.dice.map(d => d.f), counts = D.countsOf(faces), now = value(counts);
+    let best = null, gain = lvl === 'easy' ? 1 : 0.3;
+    const free = [];
+    if (E.hasE(s, i, 'gamma-breath') && !t.gamma) free.push({ via: 'gamma', faces: ['C'] });
+    if (E.hasE(s, i, 'tail-sweep') && !t.sweep) free.push({ via: 'sweep', faces: ['1', '2'] });
+    for (const ch of free) for (let k = 0; k < faces.length; k++) for (const f of ch.faces) {
+      if (f === faces[k] || t.ice === k) continue;
+      const c2 = counts.slice(); c2[FI[faces[k]]]--; c2[FI[f]]++;
+      const g = value(c2) - now;
+      if (g > gain) { gain = g; best = { t: 'change', i: k, f, via: ch.via }; }
+    }
+    if (best) return best;
+    if (p.eh.includes('saurian-adaptability')) {
+      let sb = null, sg = lvl === 'easy' ? 3 : 2.5;
+      for (const from of D.FACES) for (const to of D.FACES) {
+        if (from === to || !counts[FI[from]]) continue;
+        const c2 = counts.slice(); c2[FI[to]] += c2[FI[from]]; c2[FI[from]] = 0;
+        const g = value(c2) - now;
+        if (g > sg) { sg = g; sb = { t: 'evo', id: 'saurian-adaptability', from, to }; }
+      }
+      if (sb) return sb;
+    }
+    if (p.eh.includes('mecha-blast') && !t.mecha && counts[FI.C] > 0) {
+      const inT = E.inTokyo(s, i);
+      const targets = E.aliveSeats(s).filter(j => j !== i && (inT ? !E.inTokyo(s, j) : E.inTokyo(s, j)));
+      if (targets.length >= (lvl === 'hard' ? 1 : 2) || targets.some(j => s.players[j].hp <= counts[FI.C] + 2)) return { t: 'evo', id: 'mecha-blast' };
+    }
+    return null;
+  }
+  // which evolution from the hand to play now (or null), on the bot's own turn
+  function evoPlay(s, i, lvl, rng, phase) {
+    const p = s.players[i], t = s.t, mx = E.maxHp(s, i), inT = E.inTokyo(s, i);
+    const others = E.aliveSeats(s).filter(j => j !== i);
+    const easy = lvl === 'easy';
+    let best = null, bv = 0;
+    for (const id of p.eh.filter((x, k, a) => a.indexOf(x) === k)) {
+      if (!E.evoOk(s, i, id, phase)) continue;
+      const e = Evo.EVO[id];
+      let v = 0, act = { t: 'evo', id };
+      if (e.perm) {
+        v = 1;
+        if (id === 'twas-beauty') v = inT && (p.hp >= (easy ? 5 : 7)) && p.vp <= (lvl === 'hard' ? 9 : 12) ? 1 : 0;
+        if (id === 'icy-reflection') {
+          let tb = 0, tk = null;
+          for (const j of E.aliveSeats(s)) for (const c of s.players[j].evo) {
+            if (c.id === 'icy-reflection' || c.id === 'twas-beauty' || c.id === 'freeze-ray' || c.id === 'adapting-technology') continue;
+            const w = EVO_KEEP[c.id] || 1;
+            if (w > tb) { tb = w; tk = c.k; }
+          }
+          v = tk == null ? 0 : 1; act.k = tk;
+        }
+      } else {
+        switch (id) {
+          case 'giant-banana': v = p.hp <= (easy ? mx - 2 : 6) ? 2 : 0; break;
+          case 'radioactive-waste': v = phase === 'buy' || p.hp <= 4 ? 1 : 0; break;
+          case 'primal-bellow': v = others.reduce((a, j) => a + Math.min(2, s.players[j].vp), 0) >= (easy ? 2 : 3) ? 1 : 0; break;
+          case 'jungle-frenzy': v = 3; break;
+          case 'mega-purr': v = others.filter(j => s.players[j].en + s.players[j].vp > 0).length >= (easy ? 1 : 2) || others.length === 1 ? 1 : 0; break;
+          case 'electro-scratch': v = 1; break;
+          case 'cat-nip': v = easy ? (rng() < 0.5 ? 1 : 0) : 1; break;
+          case 'alien-scourge': v = 1; break;
+          case 'precision-field-support': v = phase === 'buy' ? 1 : 0; break;
+          case 'anger-batteries': v = (t.lost[i] || 0) >= 2 ? 1 : 0; break;
+          case 'destructive-analysis': v = (t.rolledC || 0) >= (lvl === 'hard' ? 1 : 2) ? 1 : 0; break;
+          case 'tune-up': v = !inT && p.hp <= (easy ? 4 : 5) ? 3 : 0; break;
+          case 'deep-dive': v = 1; break;
+          case 'cold-wave': case 'blizzard': v = phase === 'buy' ? 1 : 0; break;
+          default: v = 0;   // Saurian Adaptability and Mecha Blast are used with the dice (evoDice)
+        }
+      }
+      if (v > bv && legal(s, i, act)) { bv = v; best = act; }
+    }
+    return best;
+  }
+  // every decision that only exists with evolutions on (null = the usual decision)
+  function evoDecide(s, seat, lvl, rng, mine, a) {
+    const p = s.players[seat], t = s.t, easy = lvl === 'easy', mx = E.maxHp(s, seat);
+    const worth = id => (lvl === 'hard' ? cardWorth(s, seat, id) : mediumWorth(s, seat, id));
+    switch (a.type) {
+      case 'start': case 'roll': case 'buy': {
+        if (seat !== t.seat) return null;
+        if (E.hasE(s, seat, 'mothership-support') && !t.mother && p.en >= 1 && p.hp < mx && p.hp <= (easy ? 4 : 6)) return { t: 'mother' };
+        const play = evoPlay(s, seat, lvl, rng, a.type);
+        if (play) return play;
+        if (a.type === 'roll' && !E.rerollOptions(s).length) return evoDice(s, seat, lvl);
+        if (a.type === 'buy') {
+          if (E.hasE(s, seat, 'miraculous-catch') && !t.catch && s.discard.length && p.en >= 2) return { t: 'catch' };
+          const ad = p.evo.find(c => c.id === 'adapting-technology' && c.c > 0);
+          if (ad && s.deck.length >= 3) {
+            const top = Math.max(...s.market.filter(Boolean).map(id => worth(id) - (E.costFor(s, seat, id) > p.en ? 2 : 0)), -9);
+            if (top < (easy ? 1 : 2)) return { t: 'sweep', free: true };
+          }
+        }
+        return null;
+      }
+      case 'guard': {
+        const dmg = a.dmg || 0, dies = dmg >= p.hp;
+        const has = id => p.eh.includes(id);
+        if (has('detachable-tail') && (dies || dmg >= (easy ? 4 : 3))) return { t: 'guard', id: 'detachable-tail' };
+        if (has('simian-scamper') && E.inTokyo(s, seat) && (dies || p.hp - dmg <= (easy ? 3 : 5))) return { t: 'guard', id: 'simian-scamper' };
+        if (has('giant-banana') && ((dies && p.hp + 2 > dmg) || p.hp <= 5)) return { t: 'guard', id: 'giant-banana' };
+        if (has('radioactive-waste') && dies && p.hp + 1 > dmg) return { t: 'guard', id: 'radioactive-waste' };
+        return { t: 'guard', id: null };
+      }
+      case 'food': {
+        const victims = E.aliveSeats(s).filter(j => j !== seat && E.inTokyo(s, j));
+        const kill = victims.some(j => s.players[j].hp <= (t.counts ? t.counts.C : 1) + (t.mecha || 0));
+        if (easy) return { t: 'food', use: rng() < 0.5 };
+        return { t: 'food', use: !kill && victims.some(j => s.players[j].vp + s.players[j].en > 0) && p.hp < 7 };
+      }
+      case 'thump': return { t: 'thump', out: p.hp >= (easy ? 5 : 6) ? a.may.slice() : [] };
+      case 'claim': return { t: 'claim', use: p.hp >= (lvl === 'hard' ? 7 : 6) && (!easy || rng() < 0.7) };
+      case 'freeze': {
+        const v = s.players[a.on];
+        return { t: 'freeze', f: v && v.vp >= 16 ? '3' : E.inTokyo(s, a.on) ? 'C' : 'H' };
+      }
+      case 'dive': {
+        const cards = (mine && mine.dive) || s.dive || [];
+        let b = cards[0], bw = -99;
+        for (const id of cards) { const w = worth(id); if (w > bw) { bw = w; b = id; } }
+        return { t: 'dive', id: b };
+      }
+      case 'catch': {
+        const cost = Math.max(0, E.costFor(s, seat, a.id) - 1);
+        return { t: 'catch', buy: cost <= p.en && worth(a.id) - cost * 0.35 > (easy ? 0 : 0.3) };
+      }
+      case 'evoend': return { t: 'evoend', use: true };
+    }
+    return null;
+  }
+
   function decide(s, seat, lvl, rng, mine) {
     const a = s.ask;
+    if (s.evo) { const e = evoDecide(s, seat, lvl, rng, mine, a); if (e) return e; }
     switch (a.type) {
       case 'start': return { t: 'roll' };
       case 'roll': return rollDecision(s, seat, lvl, rng);

@@ -107,4 +107,29 @@ const clone = x => JSON.parse(JSON.stringify(x));
   ok('junk options give a valid game');
 }
 
+// 7. Evolutions on, through JSON copies: games end, no illegal bot move, and each hand is seen only by its owner.
+{
+  let games = 0, moves = 0, checked = 0;
+  for (let g = 0; g < 24; g++) {
+    const rng = mulberry(g + 501);
+    const n = 2 + (g % 5);
+    let s = game.setup(n, { edition: g % 4 === 3 ? '2011' : '2016', level: ['easy', 'medium', 'hard'][g % 3], evo: true }, rng, humans(n));
+    while (!game.isOver(s)) {
+      const seat = game.toAct(s)[0];
+      const pub = game.publicView(s);
+      for (let j = 0; j < n; j++) {
+        assert.equal(pub.players[j].hand, s.players[j].eh.length);
+        assert.deepEqual(game.privateView(s, j).hand, s.players[j].eh);
+        for (const id of s.players[j].eh) if (!s.players.some((p, k) => k !== j && (p.ex.includes(id) || p.evo.some(c => c.id === id)))) assert.ok(!JSON.stringify(pub.players).includes('"' + id + '"') || pub.players[j].ex.includes(id), 'hand card ' + id + ' leaks');
+        checked++;
+      }
+      s = game.apply(clone(s), seat, clone(game.bot({ pub, mine: game.privateView(s, seat), state: s }, seat, rng)), rng);
+      assert.equal(JSON.stringify(clone(s)), JSON.stringify(s));
+      assert.ok(++moves < 400000, 'runaway');
+    }
+    games++;
+  }
+  ok(games + ' online-path games with evolutions end cleanly; ' + moves + ' moves; hands secret in ' + checked + ' views');
+}
+
 console.log(pass + ' passed');

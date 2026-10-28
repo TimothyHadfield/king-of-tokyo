@@ -3,9 +3,9 @@
    somebody's decision sets s.ask and stops. toAct = the seats s.ask still waits on.
    Rules as checked in docs/rules-check.md. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./cards.js'));
-  else root.KotEngine = factory(root.KotCards);
-})(typeof self !== 'undefined' ? self : this, function (Cards) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./cards.js'), require('./evolutions.js'));
+  else root.KotEngine = factory(root.KotCards, root.KotEvo);
+})(typeof self !== 'undefined' ? self : this, function (Cards, Evo) {
   'use strict';
   // the card table of the game's own edition (names, costs and Keep/Discard)
   const CD = (s, id) => Cards.card(s.edition, id);
@@ -47,11 +47,108 @@
     return r;
   }
   const has = (s, i, id) => insts(s, i, id).length;
+
+  // ------------------------------------------------------------------ evolutions (an option, off by default)
+  // p.ed = deck, p.eh = hand (secret), p.ex = discard, p.evo = permanents in play {id, k, c?, t?, on?, tg?}
+  const EV = id => Evo.EVO[id];
+  function evoFind(s, k) {
+    for (let i = 0; i < s.players.length; i++) {
+      const p = P(s, i);
+      if (!p.alive || !p.evo) continue;
+      const c = p.evo.find(x => x.k === k);
+      if (c) return { seat: i, card: c };
+    }
+    return null;
+  }
+  // what an Icy Reflection copies right now (null if that card left play)
+  function icyId(s, c) { if (c.t == null) return null; const f = evoFind(s, c.t); return f && f.card.id !== 'icy-reflection' ? f.card.id : null; }
+  // active instances of a permanent evolution (a Freeze Ray given away is not active), Icy copies included
+  function evoInsts(s, i, id) {
+    const p = P(s, i);
+    if (!s.evo || !p.evo) return [];
+    return p.evo.filter(c => c.on == null && (c.id === id || (c.id === 'icy-reflection' && icyId(s, c) === id)));
+  }
+  const hasE = (s, i, id) => evoInsts(s, i, id).length;
+  const lingers = (s, id, i) => (s.evo ? s.ling.filter(l => l.id === id && l.seat !== i).length : 0);
+  function removeEvo(s, i, c) { const p = P(s, i); const at = p.evo.indexOf(c); if (at >= 0) { p.evo.splice(at, 1); p.ex.push(c.id); } }
+  function evoDraw(s, i, rng) {
+    const p = P(s, i);
+    if (!p.ed.length && p.ex.length) { p.ed = shuffle(p.ex.splice(0), rng); log(s, i, 'shuffles its used evolutions into a new deck'); }
+    if (!p.ed.length) return;
+    p.eh.push(p.ed.pop());
+    log(s, i, 'draws an evolution');
+    fx(s, { k: 'evodraw', s: i });
+  }
+  // a monster really leaves Tokyo (not a move between City and Bay)
+  function outOfTokyo(s, i) {
+    if (!s.evo) return;
+    if (s.t) s.t.vacated = true;
+    const p = P(s, i), tw = evoInsts(s, i, 'twas-beauty');
+    if (tw.length && p.alive) {
+      for (const c of tw) removeEvo(s, i, c);
+      if (p.vp) fx(s, { k: 'vp', s: i, n: -p.vp });
+      p.vp = 0;
+      log(s, i, '’Twas Beauty Killed the Beast: out of Tokyo, all ★ lost');
+    }
+  }
+  // Superior Alien Technology: keep cards at half price, at most 3 marked cards
+  const ufoHalf = (s, i, id) => !!s.evo && CD(s, id).keep && hasE(s, i, 'superior-alien-technology') > 0 && P(s, i).cards.filter(c => c.ufo).length < 3;
+  // cards that can be played when you are about to lose hearts
+  const GUARD = ['detachable-tail', 'simian-scamper', 'giant-banana', 'radioactive-waste'];
+  function guardCands(s, hits) {
+    if (!s.evo) return [];
+    const safe = (s.t && s.t.safe) || {};
+    return hits.filter(h => h.a > 0 && P(s, h.s).alive && !P(s, h.s).wings && !safe[h.s] &&
+      P(s, h.s).eh.some(id => GUARD.includes(id) && (id !== 'simian-scamper' || (h.claw && inTokyo(s, h.s)))))
+      .map(h => h.s).filter((x, k, a) => a.indexOf(x) === k);
+  }
+  function takeGuard(s, ans) {
+    for (const k of Object.keys(ans)) {
+      const j = +k, id = ans[k] && ans[k].id, p = P(s, j);
+      if (!id) continue;
+      p.eh.splice(p.eh.indexOf(id), 1); p.ex.push(id);
+      log(s, j, 'plays ' + EV(id).name);
+      fx(s, { k: 'evo', s: j, id });
+      if (id === 'detachable-tail') s.t.safe[j] = 1;
+      else if (id === 'simian-scamper') { s.t.safe[j] = 1; if (inTokyo(s, j)) { leaveTokyo(s, j); log(s, j, 'scampers out of Tokyo'); fx(s, { k: 'leave', s: j }); } }
+      else if (id === 'giant-banana') heal(s, j, 2, EV(id).name);
+      else if (id === 'radioactive-waste') { gainEn(s, j, 2); heal(s, j, 1, EV(id).name); }
+    }
+  }
+  // who may take Tokyo instead of the monster whose turn it is (Monkey Rush in hand, Feline Motor in play)
+  const felineOk = (s, j) => hasE(s, j, 'feline-motor') > 0 && !s.t.startTokyo.includes(j);
+  function claimCands(s, cur) {
+    if (!s.evo) return [];
+    const r = [], n = s.players.length;
+    for (let d = 1; d < n; d++) {
+      const j = (cur + d) % n, p = P(s, j);
+      if (!p.alive || inTokyo(s, j)) continue;
+      if ((s.t.vacated && p.eh.includes('monkey-rush')) || felineOk(s, j)) r.push(j);
+    }
+    return r;
+  }
+  // the first monster (in turn order) that said yes takes the spot; returns its seat or -1
+  function takeClaim(s, ans, spot) {
+    const n = s.players.length, cur = s.t.seat;
+    const order = Object.keys(ans).map(Number).sort((a, b) => ((a - cur + n) % n) - ((b - cur + n) % n));
+    for (const j of order) {
+      if (!ans[j] || !ans[j].use) continue;
+      const p = P(s, j);
+      if (felineOk(s, j)) log(s, j, 'Feline Motor!');
+      else { p.eh.splice(p.eh.indexOf('monkey-rush'), 1); p.ex.push('monkey-rush'); log(s, j, 'plays Monkey Rush'); fx(s, { k: 'evo', s: j, id: 'monkey-rush' }); }
+      enter(s, j, spot);
+      return j;
+    }
+    return -1;
+  }
   // 2016: Even Bigger sets the maximum to 12 (copies don't stack); 2011: +2 per copy
   const maxHp = (s, i) => (e16(s) ? (has(s, i, 'even-bigger') ? 12 : START_HP) : START_HP + 2 * has(s, i, 'even-bigger'));
-  const costFor = (s, i, id) => Math.max(0, CD(s, id).cost - has(s, i, 'alien-metabolism'));
+  function costFor(s, i, id) {
+    const c = Math.max(0, CD(s, id).cost - has(s, i, 'alien-metabolism'));
+    return ufoHalf(s, i, id) ? Math.ceil(c / 2) : c;
+  }
   function bayOpen(s) { return s.bayRule && aliveSeats(s).length >= 5; }
-  function diceCount(s, i, less) { return Math.max(0, 6 + has(s, i, 'extra-head') - P(s, i).shrink - (less || 0)); }
+  function diceCount(s, i, less) { return Math.max(0, 6 + has(s, i, 'extra-head') - P(s, i).shrink - (less || 0) - lingers(s, 'cold-wave', i)); }
   // neighbours: nearest living monster on each side
   function neighbours(s, i) {
     const n = s.players.length, r = [];
@@ -84,14 +181,25 @@
     if (d > 0) { p.hp += d; fx(s, { k: 'hp', s: i, n: d }); if (why) log(s, i, '+' + d + ' ♥ ' + why); }
     return d;
   }
-  function leaveTokyo(s, i) { if (s.tokyo.city === i) s.tokyo.city = -1; if (s.tokyo.bay === i) s.tokyo.bay = -1; }
+  function leaveTokyo(s, i, moving) {
+    const was = inTokyo(s, i);
+    if (s.tokyo.city === i) s.tokyo.city = -1;
+    if (s.tokyo.bay === i) s.tokyo.bay = -1;
+    if (was && !moving) outOfTokyo(s, i);
+  }
   function enter(s, i, spot) {
-    leaveTokyo(s, i);
+    leaveTokyo(s, i, true);
     s.tokyo[spot] = i;
     log(s, i, 'enters Tokyo ' + (spot === 'city' ? 'City' : 'Bay'));
     fx(s, { k: 'enter', s: i, spot });
     if (s.duel) gainEn(s, i, 1, 'for entering Tokyo');
     else gainVp(s, i, 1, 'for entering Tokyo');
+    if (s.evo) {
+      if (s.t && s.t.seat === i) s.t.tookTokyo = true;
+      const k = hasE(s, i, 'i-am-the-king'), d = hasE(s, i, 'black-diamond');
+      if (k) gainVp(s, i, k, 'I Am the King!');
+      if (d) gainVp(s, i, d, 'Black Diamond');
+    }
   }
   // a card leaves a player (2011 Even Bigger takes its 2 hearts back with it; 2016 just caps at 10)
   function lostCard(s, i, id) {
@@ -141,6 +249,11 @@
       first: rint(rng, n), cur: -1, turnNo: 0, t: null, q: [], ask: null, extra: [],
       nextK: 1, log: [], fx: [], over: false, winners: [], hist: [],
     };
+    // evolutions: dealt after everything above, so a game without them deals exactly as before
+    if (o.evo) {
+      s.evo = true; s.ling = [];
+      for (const p of players) { p.ed = shuffle(Evo.deckOf(p.mon), rng); p.eh = []; p.ex = []; p.evo = []; }
+    }
     s.q.push({ op: 'turn', seat: s.first, less: 0 });
     run(s, rng);
     return s;
@@ -165,6 +278,7 @@
     for (let i = 0; i < s.players.length; i++) {
       const p = P(s, i);
       if (p.alive && p.hp > maxHp(s, i)) p.hp = maxHp(s, i);
+      if (s.evo && p.alive) for (const c of p.evo.slice()) if (c.id === 'icy-reflection' && !icyId(s, c)) { removeEvo(s, i, c); log(s, i, 'Icy Reflection melts (its card left play)'); }
     }
   }
   // Last monster standing (or nobody) ends the game at once. 20 points only counts at the end of a
@@ -184,6 +298,32 @@
     }
   }
 
+  // evolutions that react to a monster losing hearts (h.s lost a; src made it happen; own = on src's turn)
+  function evoHurt(s, h, a, src, own, rng) {
+    const t = s.t, j = h.s;
+    if (!t) return;
+    t.lost[j] = (t.lost[j] || 0) + a;
+    if (src < 0 || src === j) return;
+    const hv = hasE(s, j, 'heat-vision');
+    if (hv) { loseVp(s, src, hv); log(s, j, 'Heat Vision: ' + P(s, src).name + ' loses ' + hv + ' ★'); }
+    for (const c of evoInsts(s, j, 'target-acquired')) c.tg = src;
+    if (own) {
+      if (!t.alpha) { const am = hasE(s, src, 'alpha-male'); if (am) { t.alpha = true; gainVp(s, src, am, 'Alpha Male'); } }
+      if (h.claw && inTokyo(s, j)) {
+        t.hitTokyo = true;
+        const fr = evoInsts(s, src, 'freeze-ray')[0];
+        if (fr && P(s, j).alive) { fr.on = j; log(s, src, 'gives its Freeze Ray to ' + P(s, j).name); }
+      }
+    }
+    // Lightning Armor: a die per heart lost, each claw hurts the monster whose turn it is
+    const la = hasE(s, j, 'lightning-armor');
+    if (la && t.seat !== j && P(s, t.seat).alive) {
+      let z = 0;
+      for (let k = 0; k < a * la; k++) if (rint(rng, 6) === 5) z++;
+      log(s, j, 'Lightning Armor rolls ' + z + ' claw' + (z === 1 ? '' : 's'));
+      if (z) applyHits(s, [{ s: t.seat, a: z }], j, rng, 'Lightning Armor:');
+    }
+  }
   // damage: hits = [{s, a}] (a before reductions). Applies reductions, tokens, knock-outs.
   function applyHits(s, hits, src, rng, kind) {
     const dealt = [];
@@ -192,14 +332,18 @@
       if (!p.alive || h.a <= 0) continue;
       let a = h.a;
       if (p.wings) a = 0;
+      if (s.evo && s.t && s.t.safe[h.s]) a = 0;
       if (a === 1 && has(s, h.s, 'armor-plating')) a = 0;
       const cam = has(s, h.s, 'camouflage');
       if (a > 0 && cam) { let saved = 0; for (let k = 0; k < a; k++) if (rint(rng, 6) === 4) saved++; if (saved) log(s, h.s, 'Camouflage blocks ' + saved); a -= saved; }
       if (a <= 0) continue;
+      const own = src >= 0 && src !== h.s && s.t && s.t.seat === src;
+      if (s.evo && own && a >= 3) a += hasE(s, src, 'claws-of-steel');
       p.hp -= a;
       fx(s, { k: 'hp', s: h.s, n: -a });
       dealt.push({ s: h.s, a, claw: !!h.claw });
       if (a >= 2 && has(s, h.s, 'were-only-making-it-stronger')) gainEn(s, h.s, 1);
+      if (s.evo) evoHurt(s, h, a, src, own, rng);
       if (src >= 0 && src !== h.s) {
         if (s.t && s.t.seat === src) s.t.hurt = true;
         // 2016: tokens only for monsters that lost hearts to claws; 2011: any damage you deal
@@ -225,6 +369,16 @@
     }
     for (const i of down) {
       const p = P(s, i);
+      if (s.evo && p.eh.includes('nine-lives')) {
+        p.eh.splice(p.eh.indexOf('nine-lives'), 1); p.ex.push('nine-lives');
+        for (const c of p.cards.slice()) discardInst(s, i, c);
+        for (const c of p.evo.slice()) removeEvo(s, i, c);
+        p.en = 0; p.hp = 9; p.vp = 9;
+        leaveTokyo(s, i);
+        log(s, i, 'is knocked out, but Nine Lives: back with 9 hearts and 9 ★');
+        fx(s, { k: 'evo', s: i, id: 'nine-lives' }); fx(s, { k: 'reborn', s: i });
+        continue;
+      }
       if (has(s, i, 'it-has-a-child') && p.cards.some(c => c.id === 'it-has-a-child')) {
         // keeps its energy and its poison/shrink tokens; leaves Tokyo
         for (const c of p.cards.slice()) discardInst(s, i, c);
@@ -241,12 +395,18 @@
       s.hist.push({ s: i, turn: s.turnNo });
       log(s, i, 'is knocked out!');
       fx(s, { k: 'ko', s: i });
+      if (s.evo) {
+        for (const c of p.evo.slice()) removeEvo(s, i, c);
+        s.ling = s.ling.filter(l => l.seat !== i);
+        for (const q of s.players) for (const c of q.evo) if (c.on === i) c.on = null;
+        for (const j of aliveSeats(s)) { const pd = hasE(s, j, 'programmed-to-destroy'); if (pd && !down.includes(j)) { gainVp(s, j, 3 * pd, 'Programmed to Destroy'); gainEn(s, j, 2 * pd); } }
+      }
     }
     // Tokyo Bay closes once 4 or fewer monsters are left
     if (s.bayRule && !bayOpen(s) && s.tokyo.bay >= 0) {
       const b = s.tokyo.bay; s.tokyo.bay = -1;
       if (s.tokyo.city < 0) { s.tokyo.city = b; log(s, b, 'moves from Tokyo Bay to Tokyo City'); }
-      else log(s, b, 'leaves Tokyo Bay (it closes at 4 monsters)');
+      else { log(s, b, 'leaves Tokyo Bay (it closes at 4 monsters)'); outOfTokyo(s, b); }
     }
   }
 
@@ -262,9 +422,40 @@
     }
   }
 
+  // the attacker takes the spot that was given up; Burrowing: the monster that left it deals 1 damage
+  function attackerEnters(s, op, spot, rng) {
+    const i = s.t.seat, was = op.was;
+    enter(s, i, spot);
+    const from = spot === 'city' ? was.city : was.bay;
+    if (from >= 0 && op.left.includes(from) && P(s, from).alive) {
+      const b = has(s, from, 'burrowing');
+      if (b) { log(s, from, 'Burrowing!'); applyHits(s, [{ s: i, a: b }], from, rng, 'deals'); }
+    }
+  }
+  // start of a turn with evolutions on; true if it asked something first (Freeze Ray)
+  function evoTurnStart(s, seat, rng) {
+    const p = P(s, seat), t = s.t;
+    Object.assign(t, { lost: {}, safe: {}, startTokyo: [s.tokyo.city, s.tokyo.bay] });
+    // cards that lasted "until your next turn" end now
+    for (const l of s.ling.filter(x => x.seat === seat)) p.ex.push(l.id);
+    s.ling = s.ling.filter(x => x.seat !== seat);
+    if (inTokyo(s, seat)) {
+      const k = hasE(s, seat, 'i-am-the-king'); if (k) gainVp(s, seat, k, 'I Am the King!');
+      const d = hasE(s, seat, 'defender-of-tokyo');
+      if (d) { for (const j of aliveSeats(s)) if (j !== seat) loseVp(s, j, d); log(s, seat, 'Defender of Tokyo: every other monster loses ' + d + ' ★'); }
+    }
+    for (const c of p.cards.filter(x => x.ufo)) {
+      if (rint(rng, 6) === 5) { discardInst(s, seat, c); log(s, seat, 'Superior Alien Technology: rolls a claw, ' + CD(s, c.id).name + ' is lost'); }
+    }
+    for (let o = 0; o < s.players.length; o++) {
+      const fr = P(s, o).evo.find(c => c.on === seat);
+      if (fr && P(s, o).alive && o !== seat) { front(s, { op: 'reask', type: 'start', seat }); ask(s, 'freeze', [o], { on: seat }); return true; }
+    }
+    return false;
+  }
   // ------------------------------------------------------------------ steps
   const OPS = {
-    turn(s, op) {
+    turn(s, op, rng) {
       // the previous turn has ended: this is when 20 points wins
       checkEnd(s, true);
       if (s.over) return;
@@ -289,6 +480,7 @@
         if (take) { p.en += take; fx(s, { k: 'en', s: seat, n: take }); log(s, seat, '+' + take + ' ⚡ from ' + nm); }
         if (!c.c && c.id === 'monster-batteries') discardInst(s, seat, c);
       }
+      if (s.evo && evoTurnStart(s, seat, rng)) return;
       ask(s, 'start', [seat]);
     },
     // after "done rolling": probes, healing ray, resolve, attack, enter, buy
@@ -309,11 +501,25 @@
       const hurt = aliveSeats(s).filter(j => j !== i && P(s, j).hp < maxHp(s, j));
       if (hurt.length) ask(s, 'ray', [i]);
     },
-    resolve(s) {
+    resolve(s, op, rng) {
       const t = s.t, i = t.seat, p = P(s, i);
       const c = { 1: 0, 2: 0, 3: 0, E: 0, H: 0, C: 0 };
-      for (const d of t.dice) c[d.f]++;
+      // evolutions: a Freeze Ray face counts for nothing, Cat Nip counts every die twice
+      for (const d of t.dice) if (d.f !== t.frozenFace) c[d.f] += t.catnip ? 2 : 1;
       t.counts = c;
+      if (s.evo) {
+        t.rolledC = c.C;
+        if (c.H >= 3) evoDraw(s, i, rng);
+        if (c[1]) { const mh = hasE(s, i, 'mouse-hunter'); if (mh) gainVp(s, i, mh, 'Mouse Hunter'); c.C += hasE(s, i, 'meow-missile'); }
+        if (c[2] >= 3 && hasE(s, i, 'funny-looking')) {
+          const o = aliveSeats(s).filter(j => j !== i);
+          if (o.length) front(s, { op: 'dmg', hits: o.map(j => ({ s: j, a: hasE(s, i, 'funny-looking') })), src: i, kind: 'Funny Looking But Dangerous:', st: 0 });
+        }
+        if (t.arms) {
+          if (c.C >= 3) { t.armsHit = true; p.en += 2; fx(s, { k: 'en', s: i, n: 2 }); log(s, i, 'Exotic Arms: 3 claws, the 2 ⚡ come back'); }
+          else { log(s, i, 'Exotic Arms: fewer than 3 claws'); applyHits(s, [{ s: i, a: 2 }], -1, rng, 'Exotic Arms:'); }
+        }
+      }
       // points from sets of three
       for (const v of [1, 2, 3]) if (c[v] >= 3) gainVp(s, i, v + c[v] - 3, 'for ' + v + '-' + v + '-' + v + (c[v] > 3 ? ' +' + (c[v] - 3) : ''));
       if (c[1] >= 3) {
@@ -352,6 +558,8 @@
         }
       }
     },
+    // stages: 0 targets, 1 Play with Your Food, 2 Wings, 3 evolutions against the hit, 4 Jets, 5 damage + stay-or-leave,
+    // 6 leaving (+ Chest Thumping), 7 thrown out, 8 somebody else takes the spot (Monkey Rush / Feline Motor)
     attack(s, op, rng) {
       const t = s.t, i = t.seat;
       if (op.st === 0) {
@@ -367,30 +575,61 @@
           // 2011: neighbours you damage take 1 extra
           for (const nb of neighbours(s, i)) { const h = hits.find(x => x.s === nb); if (h) h.a += fb; }
         }
+        if (s.evo) {
+          // Mecha Blast, Exotic Arms (+2 each), Target Acquired (+1 on the monster with your target)
+          const plus = (t.mecha || 0) + (t.armsHit ? 2 : 0);
+          for (const h of hits) if (h.claw) h.a += plus + evoInsts(s, i, 'target-acquired').filter(c => c.tg === h.s).length;
+        }
         op.hits = hits;
         op.fromTokyo = fromTokyo;
+        op.left = [];
         if (!hits.length) return;
         if (!e16(s) && targets.length) { const al = has(s, i, 'alpha-monster'); if (al) gainVp(s, i, al, 'Alpha Monster'); }
         log(s, i, targets.length ? 'attacks ' + (fromTokyo ? 'everyone outside Tokyo' : nova ? 'every monster' : 'Tokyo') : 'breathes fire on its neighbours');
         op.st = 1;
-        const w = wingsCandidates(s, hits);
         front(s, op);
-        if (w.length) ask(s, 'wings', w, { dmg: op.a });
+        if (s.evo && !fromTokyo && hasE(s, i, 'play-with-your-food') && hits.some(h => h.claw && h.a >= 2 && inTokyo(s, h.s))) ask(s, 'food', [i]);
         return;
       }
       if (op.st === 1) {
-        if (s.answers) { takeWings(s, s.answers); s.answers = null; }
-        // Jets: decide to leave before the damage lands
+        if (s.answers) {
+          if (s.answers[i] && s.answers[i].use) {
+            for (const h of op.hits) if (h.claw && h.a >= 2 && inTokyo(s, h.s)) {
+              h.a -= 2;
+              const v = P(s, h.s);
+              if (v.vp > 0) { loseVp(s, h.s, 1); gainVp(s, i, 1); }
+              if (v.en > 0) { v.en--; P(s, i).en++; fx(s, { k: 'en', s: i, n: 1 }); }
+              log(s, i, 'plays with its food: 2 less damage to ' + v.name + ', steals 1 ★ and 1 ⚡');
+            }
+          }
+          s.answers = null;
+        }
         op.st = 2;
         front(s, op);
+        const w = wingsCandidates(s, op.hits);
+        if (w.length) ask(s, 'wings', w, { dmg: op.a });
+        return;
+      }
+      if (op.st === 2) {
+        if (s.answers) { takeWings(s, s.answers); s.answers = null; }
+        op.st = 3;
+        front(s, op);
+        const g = guardCands(s, op.hits);
+        if (g.length) ask(s, 'guard', g, { dmg: op.a });
+        return;
+      }
+      if (op.st === 3) {
+        if (s.answers) { takeGuard(s, s.answers); s.answers = null; }
+        // Jets: decide to leave before the damage lands (not under somebody's Blizzard)
+        op.st = 4;
+        front(s, op);
         if (!op.fromTokyo) {
-          const jets = op.hits.filter(h => h.claw && inTokyo(s, h.s) && !P(s, h.s).wings && has(s, h.s, 'jets')).map(h => h.s);
+          const jets = op.hits.filter(h => h.claw && inTokyo(s, h.s) && !P(s, h.s).wings && has(s, h.s, 'jets') && !lingers(s, 'blizzard', h.s)).map(h => h.s);
           if (jets.length) { op.jets = jets; ask(s, 'yield', jets, { jets: true }); }
         }
         return;
       }
-      if (op.st === 2) {
-        op.left = [];
+      if (op.st === 4) {
         if (s.answers) {
           for (const k of Object.keys(s.answers)) if (s.answers[k].leave) op.left.push(+k);
           s.answers = null;
@@ -400,46 +639,77 @@
         op.was = was;
         for (const j of op.left) { leaveTokyo(s, j); log(s, j, 'leaves Tokyo (Jets: no damage)'); }
         const dealt = applyHits(s, hits, i, rng, 'deals');
-        op.st = 3;
+        op.dealt = dealt.filter(d => d.claw && d.a > 0).map(d => d.s);
+        // Breath of Doom: claws that hurt Tokyo also hurt everyone else outside it
+        if (s.evo && !op.fromTokyo && P(s, i).alive && op.dealt.some(j => was.city === j || was.bay === j)) {
+          const bd = hasE(s, i, 'breath-of-doom');
+          const out = aliveSeats(s).filter(j => j !== i && !inTokyo(s, j) && was.city !== j && was.bay !== j);
+          if (bd && out.length) applyHits(s, out.map(j => ({ s: j, a: bd })), i, rng, 'Breath of Doom:');
+        }
+        op.st = 5;
         front(s, op);
         if (!op.fromTokyo && P(s, i).alive) {
           // you may yield only after actually losing hearts to the claws (Armor, Camouflage, Wings can stop that)
-          const may = dealt.filter(d => d.claw && d.a > 0).map(d => d.s).filter(j => !op.left.includes(j) && P(s, j).alive && inTokyo(s, j));
+          const may = op.dealt.filter(j => !op.left.includes(j) && P(s, j).alive && inTokyo(s, j) && !lingers(s, 'blizzard', j));
           if (may.length) ask(s, 'yield', may, { jets: false });
         }
         return;
       }
-      if (op.st === 3) {
+      if (op.st === 5) {
         if (s.answers) {
           for (const k of Object.keys(s.answers)) if (s.answers[k].leave) op.left.push(+k);
           s.answers = null;
         }
-        const was = op.was;
         for (const j of op.left) {
           if (inTokyo(s, j)) { leaveTokyo(s, j); log(s, j, 'leaves Tokyo'); fx(s, { k: 'leave', s: j }); }
         }
+        // Chest Thumping: the attacker may throw out monsters it hurt that stayed
+        if (s.evo && !op.fromTokyo && P(s, i).alive && hasE(s, i, 'chest-thumping')) {
+          const may = op.dealt.filter(j => P(s, j).alive && inTokyo(s, j));
+          if (may.length) { op.st = 6; front(s, op); ask(s, 'thump', [i], { may }); return; }
+        }
+        op.st = 7;
+      }
+      if (op.st === 6) {
+        const out = (s.answers && s.answers.out) || [];
+        s.answers = null;
+        for (const j of out) if (inTokyo(s, j)) { leaveTokyo(s, j); op.left.push(j); log(s, j, 'is thrown out of Tokyo (Chest Thumping)'); fx(s, { k: 'leave', s: j }); }
+        op.st = 7;
+      }
+      if (op.st === 7) {
         if (!P(s, i).alive || inTokyo(s, i)) return;
         // the attacker takes the spot that was given up (City first)
+        const was = op.was;
         const gaveCity = op.left.includes(was.city), gaveBay = op.left.includes(was.bay);
-        if (gaveCity && s.tokyo.city < 0) enter(s, i, 'city');
-        else if (gaveBay && s.tokyo.bay < 0 && bayOpen(s)) enter(s, i, 'bay');
-        // Burrowing: a monster that left deals 1 damage to the one taking its place
-        if (inTokyo(s, i)) {
-          const from = gaveCity && spotOf(s, i) === 'city' ? was.city : gaveBay && spotOf(s, i) === 'bay' ? was.bay : -1;
-          if (from >= 0 && P(s, from).alive) {
-            const b = has(s, from, 'burrowing');
-            if (b) { log(s, from, 'Burrowing!'); applyHits(s, [{ s: i, a: b }], from, rng, 'deals'); }
-          }
-        }
+        const spot = gaveCity && s.tokyo.city < 0 ? 'city' : gaveBay && s.tokyo.bay < 0 && bayOpen(s) ? 'bay' : null;
+        if (!spot) return;
+        const c = claimCands(s, i);
+        if (c.length) { op.st = 8; op.spot = spot; front(s, op); ask(s, 'claim', c, { spot }); return; }
+        attackerEnters(s, op, spot, rng);
+        return;
+      }
+      if (op.st === 8) {
+        const ans = s.answers || {};
+        s.answers = null;
+        if (takeClaim(s, ans, op.spot) < 0) attackerEnters(s, op, op.spot, rng);
       }
     },
-    enter(s) {
+    // 2016: an empty spot must be filled, claws or not. 2011: only a monster that rolled a claw takes it.
+    enter(s, op) {
       const i = s.t.seat;
+      if (op.st === 1) {
+        const ans = s.answers || {};
+        s.answers = null;
+        if (takeClaim(s, ans, op.spot) < 0) enter(s, i, op.spot);
+        return;
+      }
       if (!P(s, i).alive || inTokyo(s, i)) return;
-      // 2016: an empty spot must be filled, claws or not. 2011: only a monster that rolled a claw takes it.
       if (!e16(s) && !(s.t.claws > 0)) return;
-      if (s.tokyo.city < 0) enter(s, i, 'city');
-      else if (bayOpen(s) && s.tokyo.bay < 0) enter(s, i, 'bay');
+      const spot = s.tokyo.city < 0 ? 'city' : bayOpen(s) && s.tokyo.bay < 0 ? 'bay' : null;
+      if (!spot) return;
+      const c = claimCands(s, i);
+      if (c.length) { front(s, { op: 'enter', st: 1, spot }); ask(s, 'claim', c, { spot }); return; }
+      enter(s, i, spot);
     },
     buy(s) {
       // a monster knocked out during its own turn skips the rest of it
@@ -455,7 +725,13 @@
         op.st = 1;
         if (w.length) { front(s, op); ask(s, 'wings', w, { dmg: Math.max(...op.hits.map(h => h.a)) }); return; }
       }
-      if (s.answers) { takeWings(s, s.answers); s.answers = null; }
+      if (op.st === 1) {
+        if (s.answers) { takeWings(s, s.answers); s.answers = null; }
+        op.st = 2;
+        const g = guardCands(s, op.hits);
+        if (g.length) { front(s, op); ask(s, 'guard', g, { dmg: Math.max(...op.hits.map(h => h.a)) }); return; }
+      }
+      if (s.answers) { takeGuard(s, s.answers); s.answers = null; }
       applyHits(s, op.hits, op.src, rng, op.kind);
     },
     // a card was turned face up in market slot op.i: Opportunists (not the active monster) may buy it
@@ -479,6 +755,18 @@
       if (op.st === 0) {
         op.st = 1;
         if (p.alive && p.poison > 0) { front(s, op, { op: 'dmg', hits: [{ s: i, a: p.poison }], src: -1, kind: 'poison:', st: 0 }); log(s, i, 'suffers ' + p.poison + ' poison'); return; }
+      }
+      if (s.evo && op.st === 1) {
+        // Anger Batteries: offered to every monster that lost hearts this turn
+        op.st = 2;
+        const c = aliveSeats(s).filter(j => s.t.lost[j] > 0 && P(s, j).eh.includes('anger-batteries'));
+        if (c.length) { front(s, op); ask(s, 'evoend', c); return; }
+      }
+      if (s.evo) {
+        s.answers = null;
+        // ’Twas Beauty: +1 ★ at the end of every turn; a Freeze Ray comes back at the end of its holder's turn
+        for (const j of aliveSeats(s)) { const tb = inTokyo(s, j) ? hasE(s, j, 'twas-beauty') : 0; if (tb) gainVp(s, j, tb, '’Twas Beauty'); }
+        for (const q of s.players) for (const c of q.evo) if (c.on === i) c.on = null;
       }
       if (p.alive) {
         const eh = has(s, i, 'energy-hoarder');
@@ -518,6 +806,7 @@
   function rerollOptions(s) {
     const t = s.t, i = t.seat, p = P(s, i);
     const o = [];
+    if (s.evo && (t.catnip || lingers(s, 'blizzard', i))) return o;
     if (t.rerolls > 0) o.push('normal');
     const smoke = insts(s, i, 'smoke-cloud').find(c => (c.c || 0) > 0);
     if (smoke) o.push('smoke');
@@ -536,7 +825,7 @@
     heal(s, seat, 1, 'Rapid Healing');
   }
 
-  function doBuy(s, seat, id, inst, action, rng) {
+  function doBuy(s, seat, id, inst, action, rng, ufo) {
     const p = P(s, seat);
     const card = CD(s, id);
     log(s, seat, 'buys ' + card.name);
@@ -545,6 +834,7 @@
     if (dnt) gainVp(s, seat, dnt, CD(s, 'dedicated-news-team').name);
     if (card.keep) {
       const c = inst || newInst(s, id);
+      if (ufo && !inst) c.ufo = 1;
       // 2016 Parasitic Tentacles: a taken Smoke Cloud / Battery Monster starts fresh
       if (inst && e16(s)) charge(s, c, id);
       p.cards.push(c);
@@ -610,18 +900,123 @@
         if (e16(s)) {
           // 2016: take Tokyo City; every other monster in Tokyo must leave (so Bay ends up empty)
           if (s.tokyo.city !== i) {
-            for (const spot of ['city', 'bay']) { const o = s.tokyo[spot]; if (o >= 0 && o !== i) { s.tokyo[spot] = -1; log(s, o, 'is forced out of Tokyo'); } }
+            for (const spot of ['city', 'bay']) { const o = s.tokyo[spot]; if (o >= 0 && o !== i) { s.tokyo[spot] = -1; log(s, o, 'is forced out of Tokyo'); outOfTokyo(s, o); } }
             enter(s, i, 'city');
           }
         } else if (!inTokyo(s, i)) {
           // 2011 Drop from High Altitude: take Tokyo City unless you are already in Tokyo
           const old = s.tokyo.city;
-          if (old >= 0) { s.tokyo.city = -1; log(s, old, 'is thrown out of Tokyo City'); }
+          if (old >= 0) { s.tokyo.city = -1; log(s, old, 'is thrown out of Tokyo City'); outOfTokyo(s, old); }
           enter(s, i, 'city');
         }
         break;
       default: fail('unknown card ' + id);
     }
+  }
+  // ------------------------------------------------------------------ playing an evolution on your own turn
+  // phase = the step you are at: 'start' (before rolling), 'roll' (while rolling), 'buy' (after the dice)
+  function evoOk(s, seat, id, phase) {
+    const e = EV(id), w = e.when, t = s.t;
+    if (w.includes('turn') || w.includes('tokyo')) return true;
+    if (w.includes('start')) return phase === 'start';
+    if (w.includes('dice')) return phase !== 'buy' && (id !== 'saurian-adaptability' || phase === 'roll');
+    if (w.includes('buy') || w.includes('end')) return phase === 'buy';
+    return false;
+  }
+  function playEvo(s, seat, action, rng, phase) {
+    const p = P(s, seat), t = s.t, id = action.id, e = EV(id);
+    if (!s.evo) fail('Evolutions are off in this game');
+    if (!e || !p.eh.includes(id)) fail('That evolution is not in your hand');
+    if (!evoOk(s, seat, id, phase)) fail(e.when.includes('hit') ? e.name + ' is played when you are about to lose hearts' : e.when.includes('claim') ? e.name + ' is played when Tokyo is about to be taken' : e.when.includes('ko') ? e.name + ' is played for you when you are knocked out' : 'Not now: ' + e.text);
+    const others = aliveSeats(s).filter(j => j !== seat);
+    let icyT = null;
+    switch (id) {
+      case 'twas-beauty': if (!inTokyo(s, seat)) fail('Play it while you are in Tokyo'); break;
+      case 'tune-up': if (inTokyo(s, seat)) fail('Tune-Up is played outside Tokyo'); break;
+      case 'jungle-frenzy': if (!t.hitTokyo || t.tookTokyo || inTokyo(s, seat)) fail('Only after you hurt a monster in Tokyo without moving into Tokyo'); break;
+      case 'saurian-adaptability':
+        if (!FACES.includes(action.from) || !FACES.includes(action.to) || action.from === action.to) fail('Pick a face and the face it becomes');
+        if (!t.dice.some((d, k) => d.f === action.from && t.ice !== k)) fail('No die shows that face');
+        break;
+      case 'icy-reflection': {
+        const f = action.k != null ? evoFind(s, action.k) : null;
+        if (f && f.card.id === 'icy-reflection') fail('Icy Reflection can’t copy another Icy Reflection');
+        if (!f || !EV(f.card.id).perm) fail('Pick a permanent evolution in play');
+        icyT = action.k;
+        break;
+      }
+    }
+    p.eh.splice(p.eh.indexOf(id), 1);
+    log(s, seat, 'plays ' + e.name);
+    fx(s, { k: 'evo', s: seat, id });
+    s.ask = null;
+    front(s, id === 'tune-up' ? { op: 'endTurn', st: 0 } : phase === 'buy' ? { op: 'buy' } : { op: 'reask', type: phase, seat });
+    if (e.perm) {
+      const c = { id, k: s.nextK++ };
+      if (id === 'adapting-technology') c.c = 3;
+      if (icyT != null) { c.t = icyT; log(s, seat, 'Icy Reflection copies ' + EV(evoFind(s, icyT).card.id).name); }
+      p.evo.push(c);
+      return;
+    }
+    if (id === 'cold-wave' || id === 'blizzard') { s.ling.push({ id, seat }); if (id === 'blizzard' && t.seat !== seat) t.rerolls = 0; return; }
+    p.ex.push(id);
+    switch (id) {
+      case 'giant-banana': heal(s, seat, 2, e.name); break;
+      case 'radioactive-waste': gainEn(s, seat, 2); heal(s, seat, 1, e.name); break;
+      case 'primal-bellow': for (const j of others) loseVp(s, j, 2); break;
+      case 'jungle-frenzy': s.extra.push({ seat, less: 0, why: 'jungle' }); log(s, seat, 'Jungle Frenzy: another turn after this one'); break;
+      case 'saurian-adaptability': t.dice.forEach((d, k) => { if (d.f === action.from && t.ice !== k) d.f = action.to; }); log(s, seat, 'turns every ' + action.from + ' into ' + action.to); break;
+      case 'mega-purr':
+        for (const j of others) {
+          const q = P(s, j);
+          if (q.en > 0) { q.en--; p.en++; fx(s, { k: 'en', s: seat, n: 1 }); } else if (q.vp > 0) { loseVp(s, j, 1); gainVp(s, seat, 1); }
+        }
+        break;
+      case 'electro-scratch': if (others.length) front(s, { op: 'dmg', hits: others.map(j => ({ s: j, a: 1 })), src: seat, kind: 'Electro-Scratch:', st: 0 }); break;
+      case 'cat-nip': t.catnip = true; break;
+      case 'alien-scourge': gainVp(s, seat, 2); break;
+      case 'precision-field-support':
+        for (let n = s.deck.length + s.discard.length; n > 0; n--) {
+          if (!s.deck.length && s.discard.length) s.deck = shuffle(s.discard.splice(0), rng);
+          if (!s.deck.length) break;
+          const c = s.deck.pop();
+          if (CD(s, c).keep && CD(s, c).cost <= 4) { doBuy(s, seat, c, null, null, rng); break; }
+          s.discard.push(c);
+          log(s, seat, 'turns over ' + CD(s, c).name + ' (discarded)');
+        }
+        break;
+      case 'anger-batteries': gainEn(s, seat, t.lost[seat] || 0, e.name); break;
+      case 'mecha-blast': t.mecha = (t.mecha || 0) + 2; break;
+      case 'destructive-analysis': gainEn(s, seat, t.rolledC || 0, e.name); break;
+      case 'tune-up': heal(s, seat, 4, e.name); gainEn(s, seat, 2); break;
+      case 'deep-dive': {
+        if (!s.deck.length && s.discard.length) s.deck = shuffle(s.discard.splice(0), rng);
+        const top = [];
+        for (let n = 0; n < 3 && s.deck.length; n++) top.push(s.deck.pop());
+        if (top.length) { s.dive = top; ask(s, 'dive', [seat]); }
+        break;
+      }
+    }
+  }
+  // the other evolution moves on your own turn (Mothership Support, Exotic Arms, the changes to dice)
+  function evoMove(s, seat, action, phase) {
+    const p = P(s, seat), t = s.t;
+    if (action.t === 'mother') {
+      if (!hasE(s, seat, 'mothership-support')) fail('You need Mothership Support');
+      if (t.mother) fail('Mothership Support works once a turn');
+      if (p.en < 1) fail('Not enough energy');
+      if (p.hp >= maxHp(s, seat)) fail('Already at full health');
+      p.en--; t.mother = true; heal(s, seat, 1, 'Mothership Support');
+      return true;
+    }
+    if (action.t === 'arms') {
+      if (phase !== 'start' || !hasE(s, seat, 'exotic-arms')) fail('Exotic Arms is loaded before you roll');
+      if (t.arms) fail('Already loaded');
+      if (p.en < 2) fail('Exotic Arms needs 2 energy');
+      p.en -= 2; t.arms = true; log(s, seat, 'puts 2 ⚡ on Exotic Arms');
+      return true;
+    }
+    return false;
   }
   function apply(state, seat, action, rng) {
     const s = state;
@@ -641,12 +1036,15 @@
           if (m.t === action.k) fail('Already copying that');
           p.en -= 1; setMimic(s, seat, action.k, m.k); break;
         }
+        if (action.t === 'evo') { playEvo(s, seat, action, rng, 'start'); break; }
+        if (s.evo && evoMove(s, seat, action, 'start')) break;
         if (action.t !== 'roll') fail('Roll first');
         t.n = diceCount(s, seat, t.less);
         t.dice = Array.from({ length: t.n }, () => ({ f: '1', k: false }));
         rollDice(s, t.dice.map((_, k) => k), rng);
         t.rolled = true;
         t.rerolls = 2 + has(s, seat, 'giant-brain');
+        if (t.catnip || lingers(s, 'blizzard', seat)) t.rerolls = 0;
         s.ask = null;
         log(s, seat, 'rolls ' + t.dice.map(d => d.f).join(' '));
         if (!t.n) { t.done = true; front(s, { op: 'probe' }, { op: 'ray' }, { op: 'resolve' }, { op: 'enter' }, { op: 'buy' }); break; }
@@ -654,8 +1052,11 @@
         break;
       case 'roll':
         if (action.t === 'rapid') { rapid(s, seat); break; }
+        if (action.t === 'evo') { playEvo(s, seat, action, rng, 'roll'); break; }
+        if (s.evo && evoMove(s, seat, action, 'roll')) break;
         if (action.t === 'reroll') {
-          const keep = Array.isArray(action.keep) ? action.keep : [];
+          const keep = Array.isArray(action.keep) ? action.keep.slice() : [];
+          if (t.ice != null && !keep.includes(t.ice)) keep.push(t.ice);
           if (!keep.every(k => Number.isInteger(k) && k >= 0 && k < t.dice.length) || new Set(keep).size !== keep.length) fail('Bad dice');
           const re = t.dice.map((_, k) => k).filter(k => !keep.includes(k));
           if (!re.length) fail('Pick at least one die to reroll');
@@ -676,8 +1077,21 @@
         }
         if (action.t === 'change') {
           const k = action.i, f = action.f;
-          if (!Number.isInteger(k) || k < 0 || k >= t.dice.length || !FACES.includes(f)) fail('Bad die');
-          if (action.via === 'herd') {
+          if (!Number.isInteger(k) || k < 0 || k >= t.dice.length || (action.via !== 'ice' && !FACES.includes(f))) fail('Bad die');
+          if (t.ice === k) fail('That die is frozen (Encased in Ice)');
+          if (action.via === 'ice') {
+            if (!hasE(s, seat, 'encased-in-ice') || t.ice != null) fail('Encased in Ice freezes one die a turn');
+            if (p.en < 1) fail('Encased in Ice needs 1 energy');
+            p.en--; t.ice = k; log(s, seat, 'encases a ' + t.dice[k].f + ' in ice');
+            break;
+          }
+          if (action.via === 'gamma' || action.via === 'sweep') {
+            const nm = action.via === 'gamma' ? 'gamma-breath' : 'tail-sweep';
+            if (!hasE(s, seat, nm) || t[action.via]) fail(EV(nm).name + ' is used up this turn');
+            if (action.via === 'gamma' && f !== 'C') fail('Gamma Breath makes a claw');
+            if (action.via === 'sweep' && f !== '1' && f !== '2') fail('Tail Sweep makes a 1 or a 2');
+            t[action.via] = true;
+          } else if (action.via === 'herd') {
             if (!has(s, seat, 'herd-culler') || t.herd) fail('Herd Culler is used up this turn');
             if (f !== '1') fail('Herd Culler makes a 1');
             t.herd = true;
@@ -703,6 +1117,7 @@
         break;
       case 'probe': {
         if (action.t === 'probe' && !(Number.isInteger(action.i) && action.i >= 0 && action.i < t.dice.length)) fail('Bad die');
+        if (action.t === 'probe' && t.ice === action.i) fail('That die is frozen (Encased in Ice)');
         t.probed.push(seat);
         s.ask = null;
         if (action.t === 'probe') {
@@ -744,6 +1159,7 @@
         if (a.type === 'yield' && action.t !== 'yield') fail('Bad move');
         a.ans[seat] = a.type === 'wings' ? { use: !!action.use } : { leave: !!action.leave };
         if (a.type === 'yield') log(s, seat, action.leave ? 'chooses to leave Tokyo' : 'stays in Tokyo');
+        if (a.type === 'yield' && !action.leave && s.evo) { const bd = hasE(s, seat, 'black-diamond'); if (bd) gainVp(s, seat, bd, 'Black Diamond'); }
         if (a.seats.every(x => a.ans[x])) { s.answers = a.ans; s.ask = null; }
         break;
       case 'mimic':
@@ -758,16 +1174,43 @@
         if (action.t === 'buy' && p.en < cost) fail('Not enough energy');
         s.ask = null;
         if (action.t === 'pass') break;
+        const ufo = ufoHalf(s, seat, id);
         p.en -= cost;
         s.market[a.i] = null;
         log(s, seat, 'Opportunist!');
         s.q.shift(); // drop the pending opp step for this slot; the refill brings a fresh one
         front(s, { op: 'refill', i: a.i });
-        doBuy(s, seat, id, null, action, rng); // its effects run before the refill
+        doBuy(s, seat, id, null, action, rng, ufo); // its effects run before the refill
         break;
       }
       case 'buy': {
         if (action.t === 'rapid') { rapid(s, seat); break; }
+        if (action.t === 'evo') { playEvo(s, seat, action, rng, 'buy'); break; }
+        if (s.evo && evoMove(s, seat, action, 'buy')) break;
+        if (action.t === 'catch') {
+          if (!hasE(s, seat, 'miraculous-catch')) fail('You need Miraculous Catch');
+          if (t.catch) fail('Miraculous Catch works once a turn');
+          if (!s.discard.length) fail('The discard pile is empty');
+          t.catch = true;
+          const k = rint(rng, s.discard.length);
+          s.ask = null;
+          front(s, { op: 'buy' });
+          ask(s, 'catch', [seat], { id: s.discard[k], i: k });
+          log(s, seat, 'Miraculous Catch turns up ' + CD(s, s.discard[k]).name);
+          break;
+        }
+        if (action.t === 'sweep' && action.free) {
+          const c = s.evo && p.evo.find(x => x.id === 'adapting-technology' && x.c > 0);
+          if (!c) fail('You need Adapting Technology');
+          c.c--;
+          if (!c.c) removeEvo(s, seat, c);
+          for (const id of s.market) if (id) s.discard.push(id);
+          s.market = [null, null, null];
+          log(s, seat, 'sweeps the cards for free (Adapting Technology)');
+          s.ask = null;
+          front(s, { op: 'refill', i: 0 }, { op: 'refill', i: 1 }, { op: 'refill', i: 2 }, { op: 'buy' });
+          break;
+        }
         if (action.t === 'buy' || action.t === 'top') {
           let id, slot = -1;
           if (action.t === 'top') {
@@ -779,14 +1222,14 @@
             if (!(slot >= 0 && slot < 3) || !s.market[slot]) fail('No card there');
             id = s.market[slot];
           }
-          const cost = costFor(s, seat, id);
+          const cost = costFor(s, seat, id), ufo = ufoHalf(s, seat, id);
           if (p.en < cost) fail('Not enough energy');
           p.en -= cost;
           if (slot >= 0) s.market[slot] = null; else s.deck.pop();
           s.ask = null;
           front(s, { op: 'buy' });
           if (slot >= 0) front(s, { op: 'refill', i: slot });
-          doBuy(s, seat, id, null, action, rng);
+          doBuy(s, seat, id, null, action, rng, ufo);
           break;
         }
         if (action.t === 'steal') {
@@ -834,7 +1277,65 @@
         fail('Bad move');
         break;
       }
+      case 'guard': {
+        if (action.t !== 'guard') fail('Bad move');
+        const id = action.id || null;
+        if (id && (!GUARD.includes(id) || !p.eh.includes(id))) fail('That evolution is not in your hand');
+        if (id === 'simian-scamper' && !inTokyo(s, seat)) fail('Simian Scamper is played in Tokyo');
+        a.ans[seat] = { id };
+        if (a.seats.every(x => a.ans[x])) { s.answers = a.ans; s.ask = null; }
+        break;
+      }
+      case 'food':
+        if (action.t !== 'food') fail('Bad move');
+        s.answers = { [seat]: { use: !!action.use } }; s.ask = null;
+        break;
+      case 'thump': {
+        if (action.t !== 'thump') fail('Bad move');
+        const out = Array.isArray(action.out) ? action.out.filter(j => a.may.includes(j)) : [];
+        s.answers = { out }; s.ask = null;
+        break;
+      }
+      case 'claim':
+        if (action.t !== 'claim') fail('Bad move');
+        a.ans[seat] = { use: !!action.use };
+        if (a.seats.every(x => a.ans[x])) { s.answers = a.ans; s.ask = null; }
+        break;
+      case 'freeze':
+        if (action.t !== 'freeze' || !FACES.includes(action.f)) fail('Pick a die face');
+        t.frozenFace = action.f;
+        log(s, seat, 'Freeze Ray: ' + action.f + ' does nothing for ' + P(s, a.on).name + ' this turn');
+        s.ask = null;
+        break;
+      case 'dive': {
+        if (action.t !== 'dive' || !s.dive.includes(action.id)) fail('Pick one of the cards');
+        const rest = s.dive.slice(); rest.splice(rest.indexOf(action.id), 1);
+        s.deck.unshift(...rest);
+        delete s.dive;
+        s.ask = null;
+        doBuy(s, seat, action.id, null, null, rng);
+        break;
+      }
+      case 'catch': {
+        if (action.t !== 'catch') fail('Bad move');
+        if (!action.buy) { s.ask = null; log(s, seat, 'puts it back'); break; }
+        const id = a.id, cost = Math.max(0, costFor(s, seat, id) - 1), ufo = ufoHalf(s, seat, id);
+        if (p.en < cost) fail('Not enough energy');
+        if (s.discard[a.i] !== id) fail('Bad state');
+        s.ask = null;
+        p.en -= cost;
+        s.discard.splice(a.i, 1);
+        doBuy(s, seat, id, null, null, rng, ufo);
+        break;
+      }
+      case 'evoend':
+        if (action.t !== 'evoend') fail('Bad move');
+        a.ans[seat] = { use: !!action.use };
+        if (action.use) { p.eh.splice(p.eh.indexOf('anger-batteries'), 1); p.ex.push('anger-batteries'); log(s, seat, 'plays Anger Batteries'); fx(s, { k: 'evo', s: seat, id: 'anger-batteries' }); gainEn(s, seat, s.t.lost[seat] || 0, 'Anger Batteries'); }
+        if (a.seats.every(x => a.ans[x])) s.ask = null;
+        break;
       default: fail('Bad state');
+
     }
     tidy(s);
     checkEnd(s);
@@ -843,6 +1344,11 @@
     return s;
   }
   OPS.noop = () => {};
+  // back to the step a played evolution interrupted (unless its owner went down meanwhile)
+  OPS.reask = (s, op) => {
+    if (!P(s, op.seat).alive) { front(s, { op: 'next', after: op.seat }); return; }
+    ask(s, op.type, [op.seat]);
+  };
   OPS.refill = (s, op, rng) => {
     if (!s.deck.length && s.discard.length) { s.deck = shuffle(s.discard.splice(0), rng); log(s, -1, 'The discard pile is shuffled into a new deck'); }
     s.market[op.i] = s.deck.length ? s.deck.pop() : null;
@@ -854,7 +1360,7 @@
   // everything everyone may see (no deck order)
   function publicView(s) {
     const t = s.t;
-    return {
+    const v = {
       edition: s.edition, n: s.n, bayRule: s.bayRule, duel: !!s.duel, bayOpen: bayOpen(s), level: s.level,
       players: s.players.map((p, i) => ({
         name: p.name, kind: p.kind, mon: p.mon, hp: p.hp, maxHp: maxHp(s, i), vp: p.vp, en: p.en, alive: p.alive,
@@ -867,19 +1373,43 @@
       cur: s.cur, turnNo: s.turnNo,
       t: t ? { seat: t.seat, dice: t.dice.map(d => ({ f: d.f, k: d.k })), rerolls: t.rerolls, rolled: t.rolled, done: t.done, less: t.less,
         rollId: t.rollId || 0, rolledIdx: t.rolledIdx || [], herd: t.herd, tele: t.tele, opts: t.rolled && !t.done ? rerollOptions(s) : [] } : null,
-      ask: s.ask ? { type: s.ask.type, seats: s.ask.seats.slice(), waiting: toAct(s), i: s.ask.i, dmg: s.ask.dmg, jets: s.ask.jets, k: s.ask.k } : null,
+      ask: s.ask ? Object.assign({ type: s.ask.type, seats: s.ask.seats.slice(), waiting: toAct(s), i: s.ask.i, dmg: s.ask.dmg, jets: s.ask.jets, k: s.ask.k },
+        s.evo ? { may: s.ask.may, id: s.ask.id, spot: s.ask.spot, on: s.ask.on } : {}) : null,
       log: s.log.slice(-40), fx: s.fx.slice(), over: s.over, winners: s.winners.slice(), why: s.why || null, hist: s.hist.slice(),
     };
+    if (s.evo) evoPublic(s, v);
+    return v;
+  }
+  // evolutions everyone may see: cards in play, how many in hand and deck, the used ones, what lasts until a next turn
+  function evoPublic(s, v) {
+    v.evo = true;
+    v.ling = s.ling.map(l => Object.assign({}, l));
+    s.players.forEach((p, i) => {
+      Object.assign(v.players[i], {
+        hand: p.eh.length, edeck: p.ed.length, ex: p.ex.slice(),
+        evo: p.evo.map(c => Object.assign({ id: c.id, k: c.k }, c.c != null ? { c: c.c } : {}, c.t != null ? { t: c.t, as: icyId(s, c) } : {}, c.on != null ? { on: c.on } : {}, c.tg != null ? { tg: c.tg } : {})),
+      });
+    });
+    const t = s.t;
+    if (v.t && t) Object.assign(v.t, { catnip: !!t.catnip, mecha: t.mecha || 0, arms: !!t.arms, frozenFace: t.frozenFace || null, ice: t.ice != null ? t.ice : null,
+      gamma: !!t.gamma, sweep: !!t.sweep, mother: !!t.mother, catch: !!t.catch, hitTokyo: !!t.hitTokyo, tookTokyo: !!t.tookTokyo, lost: Object.assign({}, t.lost), rolledC: t.rolledC || 0 });
   }
   // the only secret: Made in a Lab lets its owner see the top card while buying
+  // (and with evolutions on, your own hand, plus the cards a Deep Dive shows you)
   function privateView(s, seat) {
-    if (s.ask && s.ask.type === 'buy' && s.ask.seats.includes(seat) && s.deck.length && has(s, seat, 'made-in-a-lab'))
-      return { top: s.deck[s.deck.length - 1] };
-    return {};
+    const r = {};
+    if (s.ask && s.ask.type === 'buy' && s.ask.seats.includes(seat) && s.deck.length && has(s, seat, 'made-in-a-lab')) r.top = s.deck[s.deck.length - 1];
+    if (s.evo && s.players[seat]) {
+      r.hand = s.players[seat].eh.slice();
+      if (s.ask && s.ask.type === 'dive' && s.ask.seats.includes(seat)) r.dive = s.dive.slice();
+    }
+    return r;
   }
 
   return {
     FACES, WIN_VP, START_HP, setup, apply, toAct, publicView, privateView, run,
     has, maxHp, costFor, inTokyo, bayOpen, aliveSeats, neighbours, mimicTargets, rerollOptions, diceCount, insts, mimicId, findInst,
+    hasE, evoInsts, evoFind, icyId, evoOk, guardCands, claimCands, ufoHalf, lingers, GUARD,
+
   };
 });
