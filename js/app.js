@@ -47,7 +47,7 @@ function openRules(open) { if (COACH && KT) { closePop(); COACH.rules(Object.ass
 
 // ------------------------------------------------------------------ storage
 const KEY = 'kot-lab-v1';
-const DEFAULTS = { level: 'medium', edition: '2016', bay: true, duel: false, speed: 'normal', hints: true, name: '', kinds: ['human', 'computer', 'computer', 'computer'] };
+const DEFAULTS = { level: 'medium', edition: '2016', bay: true, duel: false, evo: false, speed: 'normal', hints: true, name: '', kinds: ['human', 'computer', 'computer', 'computer'] };
 function load() {
   let o = null;
   try { o = JSON.parse(localStorage.getItem(KEY)); } catch (e) { o = null; }
@@ -56,7 +56,7 @@ function load() {
   if (!['easy', 'medium', 'hard'].includes(s.level)) s.level = 'medium';
   if (!EDITIONS[s.edition]) s.edition = '2016';
   if (!['normal', 'fast'].includes(s.speed)) s.speed = 'normal';
-  s.bay = s.bay !== false; s.hints = s.hints !== false; s.duel = s.duel === true;
+  s.bay = s.bay !== false; s.hints = s.hints !== false; s.duel = s.duel === true; s.evo = s.evo === true;
   s.name = typeof s.name === 'string' ? s.name.slice(0, 20) : '';
   if (!Array.isArray(s.kinds) || s.kinds.length < 2 || s.kinds.length > 6 || !s.kinds.every(k => k === 'human' || k === 'computer')) s.kinds = DEFAULTS.kinds.slice();
   if (!s.kinds.includes('human')) s.kinds[0] = 'human';
@@ -250,7 +250,7 @@ function startLocal(resume, quiet, tutorial, daily) {
     const dm = daily ? [st.mons[0]].concat([0, 1, 2, 3, 4, 5].filter(m => m !== st.mons[0])).slice(0, 4) : null;
     const options = tut ? Object.assign({}, KT.OPTIONS, { monsters: KT.monsters(st.mons[0]) })
       : daily ? { edition: KP.DAILY.edition, level: KP.DAILY.level, bay: true, duel: false, monsters: dm }
-      : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, monsters: st.mons };
+      : { edition: st.edition, level: st.level, bay: st.bay, duel: st.duel, evo: st.evo, monsters: st.mons };
     ui.tut = tut;
     if (tut) meta.tut = true;   // the guided game never counts in My stats, even after the coach has closed
     ui.game = meta;
@@ -482,7 +482,7 @@ async function createOnlineRoom() {
     const kinds = store.settings.kinds;
     const seats = kinds.map((k, i) => (i === 0 ? 'human' : k === 'computer' ? 'computer' : 'empty'));
     fixMons();
-    const r = await r0.createRoom({ name, seats, options: { edition: store.settings.edition, level: store.settings.level, bay: store.settings.bay, duel: store.settings.duel, monsters: store.settings.mons } });
+    const r = await r0.createRoom({ name, seats, options: { edition: store.settings.edition, level: store.settings.level, bay: store.settings.bay, duel: store.settings.duel, evo: store.settings.evo, monsters: store.settings.mons } });
     if (!r.ok) { toast(r.message); ui.mode = null; room = null; snap = null; renderPlay(); return; }
     store.online = true; save();
   } catch (e) { toast('Online play couldn’t load. Check your internet.'); ui.mode = null; room = null; snap = null; renderPlay(); }
@@ -582,9 +582,10 @@ function renderGame(v) {
     // phone: a tiny face-up fan in the board's corner (one little card per keep card, tinted by kind); laptop: readable mini cards
     // five rivals across a phone leave each board narrow: a smaller fan plus the count, so the name stays readable
     const fanMax = P.length - (P[me] ? 1 : 0) >= 5 ? 2 : 6;
-    const fan = p.cards.slice(0, fanMax).map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).join('');
-    const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}</span>${p.cards.length ? `<span class="ncards" aria-label="${p.cards.length} cards">${fan}${p.cards.length > fanMax ? `<b>${p.cards.length}</b>` : ''}</span>` : ''}`;
-    return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col};--n:${Math.max(1, p.cards.length)}">
+    const pe = pub.evo && p.evo ? p.evo : [], nc = p.cards.length + pe.length;
+    const fan = p.cards.map(c => `<i class="k${Art.cardKind(c.id)}"></i>`).concat(pe.map(c => `<i style="--c:${evoCol(c.id)}"></i>`)).slice(0, fanMax).join('');
+    const cards = i === me ? '' : `<span class="scards">${p.cards.map(c => miniCard(c, 'opp')).join('')}${pe.map(c => evoMini(c, 'opp')).join('')}</span>${nc ? `<span class="ncards" aria-label="${nc} cards">${fan}${nc > fanMax ? `<b>${nc}</b>` : ''}</span>` : ''}`;
+    return `<div class="${cls.join(' ')}" data-mon="${i}" style="--mc:${col};--n:${Math.max(1, nc)}">
       <div class="mboard">${where}<span class="av">${playerFace(p, i)}</span><span class="nmx">${esc(i === me ? (p.name === 'You' ? 'You' : p.name) : p.name)}</span>
         <span class="dial hp">${Art.icon('H', 12)}<b data-n="hp">${p.hp}</b></span><span class="dial vp">${Art.icon('VP', 12)}<b data-n="vp">${p.vp}</b></span></div>
       <span class="cubes"><i class="cube"></i>${p.en > 1 ? '<i class="cube c2"></i>' : ''}${p.en > 4 ? '<i class="cube c3"></i>' : ''}<b data-n="en">${p.en}</b></span>${toks}${cards}</div>`;
@@ -612,17 +613,26 @@ function renderGame(v) {
     who = pub.winners.length ? pub.winners.map(nm).join(' & ') + (pub.winners.includes(me) ? ' win!' : ' wins!') : 'Nobody wins';
     sub = pub.why === 'points' ? 'reached 20 points' : pub.why === 'last' ? 'last monster standing' : '';
   } else if (ask) {
-    const tt = { start: 'Your turn', roll: 'Keep dice, then reroll', probe: 'Psychic Probe', ray: 'Healing Ray', wings: 'Wings?', yield: 'Stay in Tokyo?', mimic: 'Mimic', opp: 'Opportunist', buy: 'Buy cards' };
+    const tt = { start: 'Your turn', roll: 'Keep dice, then reroll', probe: 'Psychic Probe', ray: 'Healing Ray', wings: 'Wings?', yield: 'Stay in Tokyo?', mimic: 'Mimic', opp: 'Opportunist', buy: 'Buy cards',
+      guard: 'Play an evolution?', food: 'Play with Your Food?', thump: 'Chest Thumping', claim: 'Take Tokyo?', freeze: 'Freeze Ray', dive: 'Deep Dive', catch: 'Miraculous Catch', evoend: 'Anger Batteries?' };
     who = tt[ask] || 'Your move';
     if (ask === 'roll') sub = t.rerolls > 0 ? t.rerolls + ' reroll' + (t.rerolls > 1 ? 's' : '') + ' left' : 'no rerolls left';
     else if (ask === 'buy') sub = 'You have ' + P[me].en + ' energy';
     else if (ask === 'probe') sub = 'tap one of ' + nm(pub.cur) + '’s dice, or skip';
     else if (ask === 'yield') sub = 'you took a hit';
-    else if (ask === 'wings') sub = pub.ask.dmg + ' damage coming';
+    else if (ask === 'wings' || ask === 'guard') sub = pub.ask.dmg + ' damage coming';
+    else if (ask === 'food') sub = '2 fewer hearts, steal 1★ 1⚡';
+    else if (ask === 'thump') sub = 'who must leave Tokyo?';
+    else if (ask === 'claim') sub = 'Tokyo ' + (pub.ask.spot === 'bay' ? 'Bay' : 'City') + ' is free';
+    else if (ask === 'freeze') sub = 'a face that does nothing for ' + nm(pub.ask.on);
+    else if (ask === 'dive') sub = 'take one card free';
+    else if (ask === 'catch') sub = CARDS[pub.ask.id] ? CARDS[pub.ask.id].name : '';
+    else if (ask === 'evoend') sub = 'you lost ' + ((t && t.lost && t.lost[me]) || 0) + ' hearts this turn';
   } else if (curP) {
     const w = pub.ask ? pub.ask.waiting : [];
     const waitOn = w.length && w[0] !== pub.cur ? w[0] : pub.cur;
-    const doing = { start: 'is about to roll', roll: 'is rolling', probe: 'is using Psychic Probe', ray: 'is healing', wings: 'is deciding on Wings', yield: 'is deciding to stay or leave', mimic: 'is choosing a card to copy', opp: 'is thinking (Opportunist)', buy: 'is shopping' };
+    const doing = { start: 'is about to roll', roll: 'is rolling', probe: 'is using Psychic Probe', ray: 'is healing', wings: 'is deciding on Wings', yield: 'is deciding to stay or leave', mimic: 'is choosing a card to copy', opp: 'is thinking (Opportunist)', buy: 'is shopping',
+      guard: 'is deciding on an evolution', food: 'is deciding (Play with Your Food)', thump: 'is deciding (Chest Thumping)', claim: 'may take Tokyo', freeze: 'is using Freeze Ray', dive: 'is picking a card (Deep Dive)', catch: 'is deciding (Miraculous Catch)', evoend: 'may play Anger Batteries' };
     who = nm(waitOn); sub = doing[pub.ask ? pub.ask.type : 'roll'] || '';
     if (snap.seats && snap.seats[waitOn] && snap.seats[waitOn].kind === 'human' && snap.mode === 'online' && !snap.seats[waitOn].online) sub += ' (offline)';
   }
@@ -640,6 +650,7 @@ function renderGame(v) {
       if (hint.has(k)) cls.push('hint');
       if (rolledNow.has(k)) cls.push('roll');
       if (ask === 'probe' || ui.change) cls.push('pick');
+      if (t.ice === k) cls.push('ice');
       // each die lands at its own slight angle, like dice thrown on a table (fixed per roll so it doesn't wobble on redraws)
       const tilt = ((k * 7 + (t.rollId || 0) * 5 + pub.turnNo * 3) % 11) - 5;
       return `<button class="${cls.join(' ')}" data-die="${k}" style="--tilt:${tilt}deg;animation-delay:${rolledNow.has(k) ? Math.round(k * 40 * fxSp()) : 0}ms" aria-label="${d.f}">${Art.face(d.f, 24, DIE_INK)}</button>`;
@@ -656,9 +667,12 @@ function renderGame(v) {
   const myP = P[me];
   const abil = abilities(pub, me, ask);
   // the ability buttons sit after the cards row, never scrolled off the screen by a long row
+  const myEvo = pub.evo && myP && myP.evo ? myP.evo : [], myHand = pub.evo && snap.mine && Array.isArray(snap.mine.hand) ? snap.mine.hand : [];
   const mine = (myP ? myP.cards.map(c => miniCard(c, abil.ids.has(c.id) ? 'ab' : '')).join('') : '')
+    + myEvo.map(c => evoMini(c, abil.ids.has(c.id) || abil.ids.has(c.as) ? 'ab' : '')).join('')
+    + myHand.map(id => evoMini({ id }, 'hand' + (evoCan(pub, me, ask, id) ? ' ab' : ''))).join('')
     + (snap.mine && snap.mine.top && ask === 'buy' ? `<span class="chipcard mini ab top" data-top="1"><span class="nm">Top: ${esc(CARDS[snap.mine.top].name)}</span></span>` : '');
-  const nMine = (myP ? myP.cards.length : 0) + (snap.mine && snap.mine.top && ask === 'buy' ? 1 : 0);
+  const nMine = (myP ? myP.cards.length : 0) + myEvo.length + myHand.length + (snap.mine && snap.mine.top && ask === 'buy' ? 1 : 0);
 
   // ---- market: draw deck, three face-up cards, discard pile
   const canBuy = ask === 'buy' || ask === 'opp';
@@ -729,10 +743,11 @@ function renderGame(v) {
   // nothing left to do with the dice: resolve on its own
   // (one timer only: every redraw, like tapping a die, used to start another one and the second 'done' failed)
   clearTimeout(ui.autoDone);
-  if (ask === 'roll' && !t.opts.length && !abil.change) ui.autoDone = setTimeout(() => { if (myAsk() === 'roll' && ui.lastRoll === rollKey) act({ t: 'done' }); }, 650);
+  if (ask === 'roll' && !t.opts.length && !abil.change && !myHand.some(id => EVOS[id] && EVOS[id].when.includes('dice') && evoCan(pub, me, ask, id))) ui.autoDone = setTimeout(() => { if (myAsk() === 'roll' && ui.lastRoll === rollKey) act({ t: 'done' }); }, 650);
   // decisions that need a sheet
   if (ask === 'ray' && ui.sheetKind !== 'ray') raySheet(pub, me);
   if (ask === 'mimic' && ui.sheetKind !== 'mimic') mimicSheet(pub, me, true);
+  if (ask && EVO_SHEETS[ask] && ui.sheetKind !== ask) EVO_SHEETS[ask](pub, me);
   if (ui.tut && tour && tour.active) tour.update();
 }
 
@@ -797,6 +812,19 @@ function abilities(pub, me, ask) {
   }
   if ((ask === 'start' || ask === 'roll' || ask === 'buy') && E.has(pub, me, 'rapid-healing') && p.en >= 2 && p.hp < p.maxHp) { ids.add('rapid-healing'); html += `<button class="btn small" data-rapid="1">Heal 2⚡</button>`; }
   if (ask === 'start' && p.cards.some(c => c.id === 'mimic') && p.en >= 1 && E.mimicTargets(pub, me).length) { ids.add('mimic'); html += `<button class="btn small" data-mimic="1">Switch Mimic 1⚡</button>`; }
+  // evolutions in play that you use by hand
+  if (pub.evo) {
+    const hasE = id => E.hasE(pub, me, id);
+    if (ask === 'roll') {
+      if (hasE('gamma-breath') && !t.gamma) { ids.add('gamma-breath'); change = true; html += `<button class="btn small" data-chg="gamma">Make a claw</button>`; }
+      if (hasE('tail-sweep') && !t.sweep) { ids.add('tail-sweep'); change = true; html += `<button class="btn small" data-chg="sweep">Make a 1 or 2</button>`; }
+      if (hasE('encased-in-ice') && t.ice == null && p.en >= 1) { ids.add('encased-in-ice'); change = true; html += `<button class="btn small" data-chg="ice">Freeze a die 1⚡</button>`; }
+    }
+    if ((ask === 'start' || ask === 'roll' || ask === 'buy') && hasE('mothership-support') && !t.mother && p.en >= 1 && p.hp < p.maxHp) { ids.add('mothership-support'); html += `<button class="btn small" data-evm="mother">Heal 1⚡</button>`; }
+    if (ask === 'start' && hasE('exotic-arms') && !t.arms && p.en >= 2) { ids.add('exotic-arms'); html += `<button class="btn small" data-evm="arms">Load Arms 2⚡</button>`; }
+    if (ask === 'buy' && hasE('miraculous-catch') && !t.catch && pub.discardSize > 0) { ids.add('miraculous-catch'); html += `<button class="btn small" data-evm="catch">Catch</button>`; }
+    if (ask === 'buy' && (p.evo || []).some(c => c.id === 'adapting-technology' && c.c > 0)) { ids.add('adapting-technology'); html += `<button class="btn small" data-evm="fsweep">Free sweep</button>`; }
+  }
   return { ids, html, change };
 }
 
@@ -821,6 +849,14 @@ function actionButtons(pub, me, ask) {
     case 'buy': return `<button class="btn primary" id="btn-end">End turn</button>`;
     case 'ray': return `<button class="btn primary" id="btn-ray">Healing Ray…</button>`;
     case 'mimic': return `<button class="btn primary" id="btn-mimicpick">Pick a card to copy…</button>`;
+    case 'guard': {
+      const opts = (snap.mine && snap.mine.hand || []).filter(id => E.GUARD.includes(id) && (id !== 'simian-scamper' || E.inTokyo(pub, me)));
+      return opts.map(id => `<button class="btn warm" data-guard="${id}">${esc(EVOS[id].name)}</button>`).join('') + `<button class="btn" data-guard="">Take it</button>`;
+    }
+    case 'food': return `<button class="btn warm" data-food="1">Steal 1★ 1⚡</button><button class="btn" data-food="0">Full damage</button>`;
+    case 'claim': return `<button class="btn primary" data-claim="1">Take Tokyo</button><button class="btn" data-claim="0">No</button>`;
+    case 'evoend': { const n = (t && t.lost && t.lost[me]) || 0; return `<button class="btn primary" data-evoend="1">Gain ${n}⚡</button><button class="btn" data-evoend="0">Keep it</button>`; }
+    case 'thump': case 'freeze': case 'dive': case 'catch': return `<button class="btn primary" id="btn-evosheet">${esc(EVO_ASK_NAME[ask])}…</button>`;
   }
   if (p && !p.alive) return `<button class="btn" disabled>You’re knocked out · watching</button>`;
   return `<button class="btn" disabled>${pub.cur === me ? 'Working…' : 'Waiting…'}</button>`;
@@ -858,6 +894,7 @@ function floats(pub) {
   const key = pub.turnNo + '|' + pub.log.length + '|' + JSON.stringify(pub.fx);
   if (key === ui.fxKey || !pub.fx.length) { ui.fxKey = key; return; }
   ui.fxKey = key;
+  if (pub.evo) { const ev = pub.fx.filter(f => f.k === 'evo' && f.s !== snap.mySeat && EVOS[f.id] && pub.players[f.s]); if (ev.length) toast(ev.map(f => pub.players[f.s].name + ' plays ' + EVOS[f.id].name).join(' · ')); }
   if (!FX.settings.animations) return;
   const sum = {};
   for (const f of pub.fx) {
@@ -916,12 +953,13 @@ function wireGame(v, pub, me, ask) {
     const k = +b.dataset.die;
     if (ask === 'probe') { act({ t: 'probe', i: k }); return; }
     if (ask !== 'roll') return;
+    if (ui.change === 'ice') { ui.change = null; act({ t: 'change', i: k, via: 'ice' }); return; }
     if (ui.change) { facePicker(k, ui.change); return; }
     if (ui.keep.has(k)) { ui.keep.delete(k); FX.play('place', { pitch: 1.3, vol: 0.5 }); } else { ui.keep.add(k); FX.play('place', { pitch: 1.7, vol: 0.6 }); }
     store.keepSel = { key: ui.lastRoll, keep: [...ui.keep] }; save();
     renderPlay();
   });
-  v.querySelectorAll('[data-chg]').forEach(b => b.onclick = () => { ui.change = b.dataset.chg; toast('Tap the die to change'); renderPlay(); });
+  v.querySelectorAll('[data-chg]').forEach(b => b.onclick = () => { ui.change = b.dataset.chg; toast(ui.change === 'ice' ? 'Tap the die to freeze' : 'Tap the die to change'); renderPlay(); });
   v.querySelectorAll('[data-use]').forEach(b => b.onclick = () => {
     const keep = [...ui.keep].sort((a, c) => a - c);
     if (b.dataset.use === 'dweller') { const k3 = pub.t.dice.map((d, k) => (d.f === '3' && !ui.keep.has(k) ? -1 : k)).filter(k => k >= 0); act({ t: 'reroll', keep: k3, use: 'dweller' }); return; }
@@ -941,10 +979,22 @@ function wireGame(v, pub, me, ask) {
     cardSheet(b.dataset.card, { k: +b.dataset.k });
   });
   v.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => monsterSheet(+b.dataset.mon));
+  // evolutions: a card in hand or in play opens it; the decisions they bring
+  v.querySelectorAll('[data-evh]').forEach(b => b.onclick = e => { e.stopPropagation(); evoSheet(b.dataset.evh, { hand: true }); });
+  v.querySelectorAll('[data-evk]').forEach(b => b.onclick = e => { e.stopPropagation(); evoSheet(b.dataset.evid, { k: +b.dataset.evk }); });
+  v.querySelectorAll('[data-evm]').forEach(b => b.onclick = () => {
+    const m = b.dataset.evm;
+    act(m === 'mother' ? { t: 'mother' } : m === 'arms' ? { t: 'arms' } : m === 'catch' ? { t: 'catch' } : { t: 'sweep', free: true });
+  });
+  v.querySelectorAll('[data-guard]').forEach(b => b.onclick = () => act({ t: 'guard', id: b.dataset.guard || null }));
+  v.querySelectorAll('[data-food]').forEach(b => b.onclick = () => act({ t: 'food', use: b.dataset.food === '1' }));
+  v.querySelectorAll('[data-claim]').forEach(b => b.onclick = () => act({ t: 'claim', use: b.dataset.claim === '1' }));
+  v.querySelectorAll('[data-evoend]').forEach(b => b.onclick = () => act({ t: 'evoend', use: b.dataset.evoend === '1' }));
+  on('#btn-evosheet', () => { if (EVO_SHEETS[ask]) EVO_SHEETS[ask](pub, me); });
 }
 
 function facePicker(k, via) {
-  const faces = via === 'herd' ? ['1'] : D.FACES;
+  const faces = via === 'herd' ? ['1'] : via === 'gamma' ? ['C'] : via === 'sweep' ? ['1', '2'] : D.FACES;
   openSheet(`<h3>Change this die to…</h3><div class="facepick">${faces.map(f => `<button class="die" data-f="${f}">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>
     <button class="btn" id="btn-x">Cancel</button>`, el => {
     el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { closeSheet(); ui.change = null; act({ t: 'change', i: k, f: b.dataset.f, via }); });
@@ -1007,12 +1057,144 @@ function monsterSheet(i) {
   const where = pub.tokyo.city === i ? 'in Tokyo City' : pub.tokyo.bay === i ? 'in Tokyo Bay' : p.alive ? 'outside Tokyo' : 'knocked out';
   openSheet(`<h3>${Art.monster(p.mon, 34)} ${esc(p.name)}</h3><span class="muted small">${monName(p.mon)} · ${where}${p.poison ? ` · ${p.poison} poison` : ''}${p.shrink ? ` · ${p.shrink} shrink` : ''}</span>
     <div class="row" style="gap:16px;font-size:15px"><span style="color:var(--hp)">${Art.icon('H', 16)} ${p.hp}/${p.maxHp}</span><span style="color:var(--vp)">${Art.icon('VP', 16)} ${p.vp}/20</span><span style="color:var(--en)">${Art.icon('E', 16)} ${p.en}</span></div>
-    <div class="scroll" style="display:flex;flex-direction:column;gap:6px">${p.cards.length ? p.cards.map(c => `<div class="crow" data-card="${c.id}" data-k="${c.k}"><span>${Art.cardIcon(c.id, 18)}</span><div class="ct"><div class="cn">${esc(CARDS[c.id].name)}${c.c != null ? ' · ' + c.c + ' left' : ''}${c.as ? ' → ' + esc(CARDS[c.as].name) : ''}</div><div class="cx">${esc(CARDS[c.id].text)}</div></div></div>`).join('') : '<span class="muted small">No cards.</span>'}</div>
+    <div class="scroll" style="display:flex;flex-direction:column;gap:6px">${p.cards.length ? p.cards.map(c => `<div class="crow" data-card="${c.id}" data-k="${c.k}"><span>${Art.cardIcon(c.id, 18)}</span><div class="ct"><div class="cn">${esc(CARDS[c.id].name)}${c.c != null ? ' · ' + c.c + ' left' : ''}${c.as ? ' → ' + esc(CARDS[c.as].name) : ''}</div><div class="cx">${esc(CARDS[c.id].text)}</div></div></div>`).join('') : '<span class="muted small">No cards.</span>'}
+      ${pub.evo ? (p.evo || []).map(c => `<div class="crow" data-evk="${c.k}" data-evid="${c.id}"><span>${Art.monster(EVOS[c.id].mon, 18)}</span><div class="ct"><div class="cn">${esc(EVOS[c.id].name)}${evoNote(pub, c) ? ' · ' + esc(evoNote(pub, c)) : ''}</div><div class="cx">${esc(EVOS[c.id].text)}</div></div></div>`).join('') + `<span class="muted small">Evolutions: ${p.hand || 0} in hand, ${p.edeck || 0} in deck${p.ex && p.ex.length ? ', used: ' + p.ex.map(id => esc(EVOS[id] ? EVOS[id].name : id)).join(', ') : ''}</span>` : ''}</div>
     <button class="btn ghost" id="btn-x">Close</button>`, el => {
     $('#btn-x', el).onclick = closeSheet;
     el.querySelectorAll('[data-card]').forEach(b => b.onclick = () => cardSheet(b.dataset.card, { k: +b.dataset.k }));
+    el.querySelectorAll('[data-evk]').forEach(b => b.onclick = () => evoSheet(b.dataset.evid, { k: +b.dataset.evk }));
   });
 }
+
+// ------------------------------------------------------------------ evolutions (an option, off by default)
+// each monster's own cards: in your hand (only you see them) or played face up in front of you
+const EVOS = window.KotEvo ? window.KotEvo.EVO : {};
+const evoCol = id => (EVOS[id] && MONSTERS[EVOS[id].mon] ? MONSTERS[EVOS[id].mon].color : '#888');
+const EVO_ASK_NAME = { thump: 'Chest Thumping', freeze: 'Pick a face', dive: 'Pick a card', catch: 'Miraculous Catch' };
+// the line under a played card: what it copies, its tokens, where it is
+function evoNote(pub, c) {
+  if (c.as && EVOS[c.as]) return 'copies ' + EVOS[c.as].name;
+  if (c.id === 'icy-reflection') return 'copies nothing';
+  if (c.c != null) return c.c + ' left';
+  if (c.on != null && pub.players[c.on]) return 'with ' + pub.players[c.on].name;
+  if (c.tg != null && pub.players[c.tg]) return 'target: ' + pub.players[c.tg].name;
+  return '';
+}
+function evoMini(c, extra) {
+  const e = EVOS[c.id];
+  if (!e) return '';
+  const hand = /\bhand\b/.test(extra || '');
+  const note = hand ? 'In hand' : c.as && EVOS[c.as] ? EVOS[c.as].name : c.on != null ? 'Given' : '';
+  return `<span class="chipcard mini evo${extra ? ' ' + extra : ''}" ${hand ? `data-evh="${c.id}"` : `data-evk="${c.k}" data-evid="${c.id}"`} title="${esc(e.name)}"><span class="nm">${esc(e.name)}</span><span class="art" style="--art:${evoCol(c.id)}">${Art.monster(e.mon, 18)}</span>${note ? `<span class="as">${esc(note)}</span>` : ''}${c.c != null ? `<span class="ctr">${c.c}</span>` : ''}</span>`;
+}
+// permanent evolutions in play an Icy Reflection can copy
+function icyTargets(pub) {
+  const r = [];
+  pub.players.forEach((p, i) => { if (p.alive) for (const c of p.evo || []) if (EVOS[c.id] && EVOS[c.id].perm && c.id !== 'icy-reflection') r.push({ seat: i, c }); });
+  return r;
+}
+// can this card in hand be played right now (the engine has the last word)
+function evoCan(pub, me, ask, id) {
+  const p = pub.players[me];
+  if (!pub.evo || !p || !p.alive || !EVOS[id] || !['start', 'roll', 'buy'].includes(ask) || !E.evoOk(pub, me, id, ask)) return false;
+  const t = pub.t || {}, inT = E.inTokyo(pub, me);
+  if (id === 'twas-beauty') return inT;
+  if (id === 'tune-up') return !inT;
+  if (id === 'jungle-frenzy') return !!t.hitTokyo && !t.tookTokyo && !inT;
+  if (id === 'icy-reflection') return icyTargets(pub).length > 0;
+  if (id === 'saurian-adaptability') return !!(t.dice && t.dice.length);
+  return true;
+}
+const EVO_WHEN = {
+  hit: 'Offered when you are about to lose hearts.', claim: 'Offered when Tokyo is about to be taken.', ko: 'Played for you when you drop to 0 hearts.',
+  start: 'Play on your turn, before you roll.', dice: 'Play on your turn, before your dice resolve.', buy: 'Play on your turn, after your dice.',
+  tokyo: 'Play on your turn while you are in Tokyo.', turn: 'Play on your turn.', end: 'Play on your turn after your dice, or when offered at the end of a turn you lost hearts in.',
+};
+function evoSheet(id, where) {
+  const e = EVOS[id];
+  if (!e || !snap || !snap.pub) return;
+  const pub = snap.pub, me = snap.mySeat, ask = myAsk();
+  const can = where.hand && evoCan(pub, me, ask, id);
+  const inst = where.k != null ? pub.players.map(p => (p.evo || []).find(c => c.k === where.k)).find(Boolean) : null;
+  const when = where.hand ? (e.when.includes('turn') && e.when.includes('hit') ? EVO_WHEN.turn + ' ' + EVO_WHEN.hit : EVO_WHEN[e.when[0]] || '') : '';
+  let extra = '';
+  const sel = { from: null, to: null, k: null };
+  if (can && id === 'saurian-adaptability') {
+    const shown = D.FACES.filter(f => pub.t.dice.some((d, k) => d.f === f && pub.t.ice !== k));
+    extra = `<span class="muted small">Every die showing</span><div class="facepick" data-row="from">${shown.map(f => `<button class="die" data-f="${f}" aria-pressed="false">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>
+      <span class="muted small">becomes</span><div class="facepick" data-row="to">${D.FACES.map(f => `<button class="die" data-f="${f}" aria-pressed="false">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>`;
+  }
+  if (can && id === 'icy-reflection') {
+    extra = `<span class="muted small">Pick the card to copy</span><div class="scroll" style="display:flex;flex-direction:column;gap:6px">${icyTargets(pub).map(o => `<div class="crow" data-icy="${o.c.k}"><span>${Art.monster(EVOS[o.c.id].mon, 18)}</span><div class="ct"><div class="cn">${esc(EVOS[o.c.id].name)} <span class="muted small">· ${esc(pub.players[o.seat].name)}</span></div><div class="cx">${esc(EVOS[o.c.id].text)}</div></div></div>`).join('')}</div>`;
+  }
+  const needPick = can && (id === 'saurian-adaptability' || id === 'icy-reflection');
+  openSheet(`<h3>${Art.monster(e.mon, 34)} ${esc(e.name)}</h3><span class="muted small">${esc(MONSTERS[e.mon].name)} · ${e.perm ? 'Permanent' : 'Temporary'}${inst && evoNote(pub, inst) ? ' · ' + esc(evoNote(pub, inst)) : ''}</span>
+    <div class="evtx">${esc(e.text)}</div>${when ? `<span class="muted small">${esc(when)}</span>` : ''}${extra}
+    ${can ? `<button class="btn primary" id="btn-evoplay" ${needPick ? 'disabled' : ''}>Play</button>` : ''}<button class="btn ghost" id="btn-x">Close</button>`, el => {
+    $('#btn-x', el).onclick = closeSheet;
+    const pb = $('#btn-evoplay', el);
+    const ready = () => { if (pb) pb.disabled = id === 'saurian-adaptability' ? !(sel.from && sel.to && sel.from !== sel.to) : id === 'icy-reflection' ? sel.k == null : false; };
+    el.querySelectorAll('.facepick[data-row] [data-f]').forEach(b => b.onclick = () => {
+      const row = b.parentElement.dataset.row;
+      sel[row] = b.dataset.f;
+      b.parentElement.querySelectorAll('[data-f]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      ready();
+    });
+    el.querySelectorAll('[data-icy]').forEach(b => b.onclick = () => {
+      sel.k = +b.dataset.icy;
+      el.querySelectorAll('[data-icy]').forEach(x => x.classList.toggle('on', x === b));
+      ready();
+    });
+    if (pb) pb.onclick = () => { closeSheet(); act(Object.assign({ t: 'evo', id }, id === 'saurian-adaptability' ? { from: sel.from, to: sel.to } : {}, id === 'icy-reflection' ? { k: sel.k } : {})); };
+  });
+}
+// Chest Thumping: which of the monsters you hurt in Tokyo must leave it
+function thumpSheet(pub, me) {
+  ui.sheetKind = 'thump';
+  const may = pub.ask.may || [], out = new Set(may);
+  openSheet(`<h3>Chest Thumping</h3><span class="muted small">You hurt these monsters in Tokyo. Tick the ones that must leave.</span>
+    <div class="seats">${may.map(i => `<label class="seatrow">${Art.monster(pub.players[i].mon, 28)}<span class="nmx">${esc(pub.players[i].name)}</span><input type="checkbox" data-s="${i}" checked></label>`).join('')}</div>
+    <button class="btn primary" id="btn-thok">Done</button>`, el => {
+    el.querySelectorAll('input[data-s]').forEach(c => c.onchange = () => { const i = +c.dataset.s; if (c.checked) out.add(i); else out.delete(i); });
+    $('#btn-thok', el).onclick = () => { closeSheet(); act({ t: 'thump', out: [...out] }); };
+  });
+  ui.sheetKind = 'thump';
+}
+// Freeze Ray: name a face that does nothing for that monster this turn
+function freezeSheet(pub, me) {
+  ui.sheetKind = 'freeze';
+  const on = pub.ask.on;
+  openSheet(`<h3>Freeze Ray</h3><span class="muted small">Pick a die face that does nothing for ${esc(pub.players[on] ? pub.players[on].name : '')} this turn.</span>
+    <div class="facepick">${D.FACES.map(f => `<button class="die" data-f="${f}">${Art.face(f, 24, DIE_INK)}</button>`).join('')}</div>`, el => {
+    el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { closeSheet(); act({ t: 'freeze', f: b.dataset.f }); });
+  });
+  ui.sheetKind = 'freeze';
+}
+// Deep Dive: the top cards of the deck, seen by you only; take one free
+function diveSheet(pub, me) {
+  const ids = (snap.mine && snap.mine.dive) || [];
+  if (!ids.length) return;
+  ui.sheetKind = 'dive';
+  openSheet(`<h3>Deep Dive</h3><span class="muted small">Take one card free. The others go under the deck.</span>
+    <div class="scroll" style="display:flex;flex-direction:column;gap:6px">${ids.map(id => `<div class="crow" data-dive="${id}"><span>${Art.cardIcon(id, 18)}</span><div class="ct"><div class="cn">${esc(CARDS[id].name)} <span class="muted small">· ${CARDS[id].keep ? 'Keep' : 'Discard'} · ${CARDS[id].cost}⚡</span></div><div class="cx">${esc(CARDS[id].text)}</div></div></div>`).join('')}</div>`, el => {
+    el.querySelectorAll('[data-dive]').forEach(b => b.onclick = () => { closeSheet(); act({ t: 'dive', id: b.dataset.dive }); });
+  });
+  ui.sheetKind = 'dive';
+}
+// Miraculous Catch: the card turned up from the discard pile, 1 energy cheaper
+function catchSheet(pub, me) {
+  const id = pub.ask.id;
+  if (!CARDS[id]) return;
+  ui.sheetKind = 'catch';
+  const cost = Math.max(0, E.costFor(pub, me, id) - 1), en = pub.players[me].en;
+  openSheet(`${cardFace(id, 'pc big ' + (CARDS[id].keep ? 'K' : 'D'), cost)}
+    <button class="btn primary" id="btn-cbuy" ${en >= cost ? '' : 'disabled'}>Buy · ${cost}⚡</button><button class="btn" id="btn-cno">Put it back</button>`, el => {
+    $('#btn-cbuy', el).onclick = () => { closeSheet(); act({ t: 'catch', buy: true }); };
+    $('#btn-cno', el).onclick = () => { closeSheet(); act({ t: 'catch', buy: false }); };
+  });
+  ui.sheetKind = 'catch';
+}
+const EVO_SHEETS = { thump: thumpSheet, freeze: freezeSheet, dive: diveSheet, catch: catchSheet };
 
 function raySheet(pub, me) {
   ui.sheetKind = 'ray';
@@ -1351,6 +1533,7 @@ function renderSettings() {
     <div class="panel">
       <div class="setrow"><div class="grow"><b>Tokyo Bay</b><span>Second Tokyo spot with 5–6 monsters</span></div><label class="switch"><input type="checkbox" data-sw="bay" ${st.bay ? 'checked' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Two-player variant</b><span>With 2 monsters, Tokyo pays energy instead of points${st.edition === '2011' ? ' · 2016 deck only' : ''}</span></div><label class="switch"><input type="checkbox" data-sw="duel" ${st.duel && st.edition !== '2011' ? 'checked' : ''} ${st.edition === '2011' ? 'disabled' : ''}><span></span></label></div>
+      <div class="setrow"><div class="grow"><b>Evolutions</b><span>Each monster gets its own 8 cards: roll 3 hearts to draw one</span></div><label class="switch"><input type="checkbox" data-sw="evo" ${st.evo ? 'checked' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Best-keep dots</b><span>Green dot under the best dice to keep</span></div><label class="switch"><input type="checkbox" data-sw="hints" ${st.hints ? 'checked' : ''}><span></span></label></div>
       <div class="setrow"><div class="grow"><b>Computer speed</b></div><div style="width:170px">${seg('speed', [['normal', 'Normal'], ['fast', 'Fast']])}</div></div>
     </div>

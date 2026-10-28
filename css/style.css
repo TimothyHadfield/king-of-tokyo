@@ -403,6 +403,13 @@ ul.log li b { color: var(--text); font-weight: 650; }
 .sheet h3 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; }
 .facepick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .facepick .die { width: 100%; height: 48px; }
+.facepick .die[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--accent-warm); }
+.crow.on { border-color: var(--accent); background: rgba(110,168,254,.14); }
+.evtx { font-size: 14px; line-height: 1.4; }
+/* evolutions (an option): the monster's own cards; the ones in your hand have a dashed edge */
+.chipcard.mini.evo .nm { background: linear-gradient(#2b3a4f, #1b2433); }
+.chipcard.mini.evo.hand { outline: 1.5px dashed rgba(255,255,255,.75); outline-offset: -1.5px; }
+.die.ice { box-shadow: inset -2px -3px 4px rgba(0,0,0,.65), 0 0 0 3px #9fd8ff, 0 0 10px #9fd8ff; }
 
 /* ------------------------------------------------ setup / lobby */
 .setup { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; max-width: 760px; width: 100%; margin: 0 auto; overflow-y: auto; }
@@ -473,6 +480,9 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 @media (max-width: 360px) { .opps.many .seat { grid-template-areas: "nm nm nm" "hp vp en"; } .opps.many .seat .av { display: none; } .opps.many .seat .nmx { text-align: center; } .die { width: 38px; height: 38px; } .seat.me { width: 124px; } .opps .seat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #game { --side: 40px; }
   .myarea { gap: 6px; }
+  /* ability buttons side by side (a wrapped column overflowed the screen edge); with two or more, a long card row squeezes to make room */
+  .myarea:has(.abil > :nth-child(2)) .mine { min-width: var(--mw); }
+  .abil { flex-direction: row; flex-wrap: nowrap; max-height: none; }
   .abil .btn.small { max-width: 50px; white-space: normal; line-height: 1.15; padding: 4px 4px; }
   .spot .tag { letter-spacing: 0; padding: 1px 4px; } }
 @media (max-height: 640px) and (max-width: 899px) and (orientation: portrait) { #game { gap: 4px; } .dice { min-height: 50px; padding-top: 6px; } .die { width: 40px; height: 40px; } .myarea { min-height: 60px; } }

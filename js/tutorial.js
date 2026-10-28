@@ -189,7 +189,13 @@
           <li>The last monster standing wins. If everyone is knocked out at once, nobody wins.</li></ul>` },
         { id: 'options', short: 'Options', title: 'Options on this site', html: `<ul><li><b>2011 deck</b> (Settings): the first edition's card names and costs. With it, you need a claw to move into an empty Tokyo.</li>
           <li><b>Two-player variant</b> (Settings, 2016 deck): with 2 monsters, Tokyo pays 1 ⚡ instead of ★ for moving in and for starting a turn there.</li>
-          <li><b>Tokyo Bay</b> can be switched off for 5–6 monsters.</li></ul>` },
+          <li><b>Tokyo Bay</b> can be switched off for 5–6 monsters.</li></ul>
+          <h4>Evolutions</h4><p>Off unless you switch it on in Settings. Each monster gets its own shuffled deck of 8 evolution cards.</p>
+          <ul><li>When your dice resolve with at least <b>3 ♥</b>, draw one evolution into your hand (even in Tokyo). Only you see your hand.</li>
+          <li>Tap a card in your row to read it. A card that glows can be played now: tap it, then <b>Play</b>.</li>
+          <li><b>Permanent</b> cards stay in front of you and keep working. <b>Temporary</b> cards work once and are used up.</li>
+          <li>Some cards are offered at the right moment instead: when you are about to lose ♥, when Tokyo is about to be taken, or at the end of a turn.</li>
+          <li>Cards with a dashed edge are in your hand; the rest are in play.</li></ul>` },
         { id: 'videos', short: 'Videos', title: 'Learn from videos', html: `<p>Videos open on YouTube in a new tab.</p><ul>
           <li><a href="https://www.youtube.com/watch?v=DjfsX847nb0" target="_blank" rel="noopener">How to play</a> · IELLO, the publisher</li>
           <li><a href="https://www.youtube.com/watch?v=RWYGlPf6IzE" target="_blank" rel="noopener">The rules in 3 minutes</a> · The Rules Girl</li>

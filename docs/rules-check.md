@@ -89,3 +89,11 @@ Researched 2026-10-20. Card texts in the app are our own words; names, costs and
 ## Tests seen failing on a broken engine (2026-10-20)
 Deliberately broke: Extra Head ×1, mid-turn 20-point wins, hearts healing in Tokyo, Made in a Lab top card shown to everyone.
 Result: 9 engine tests failed (deck ×3, setup, Tokyo healing, win timing ×3, 100-game test) and the online secrecy test failed. Restored: all pass (now 37 engine tests + 6 online checks).
+
+## Evolutions (option, off by default; added 2026-10-28)
+The Power Up! expansion idea, called "Evolutions" on the site. Card texts are in our own words (`js/evolutions.js`); art is the site's own monster portraits.
+- **Sources, cross-checked:** Board Game Arena's open-source King of Tokyo (github thoun/kingoftokyo: `src/evolution-cards.ts`, `material.inc.php`), and BGA news on Power Up! (id 621).
+- **Monster mapping:** site monster 0 The King, 1 Gigazaur, 2 Cyber Kitty, 3 Alienoid, 4 Meka Dragon, 5 Space Penguin, each with that monster's official 8 cards.
+- **Rules kept:** each monster has its own shuffled 8; resolving 3+ ♥ draws one (also in Tokyo); the hand is secret (only `privateView` shows it); Permanent cards stay in play, Temporary ones are used once. A base game uses the random numbers exactly as before (300 computer games byte-identical to the old engine).
+- **Simplifications (flagged):** Mega Purr: each monster gives ⚡ if it has any, else ★ (no choice). Superior Alien Technology's half price is applied automatically. Target Acquired moves automatically. Nine Lives plays itself. Lightning Armor, Breath of Doom and Exotic Arms damage lands at once. Reactive cards (Detachable Tail, Simian Scamper, Giant Banana, Radioactive Waste) are offered when you are about to lose hearts. Anger Batteries is offered at the end of any turn you lost hearts in, and can also be played in your own buy step. Computers never load Exotic Arms and never use Encased in Ice.
+- **Tests:** `tests/evo.test.js` has one test per card (54, all seen failing before the engine code); the ladder test with evolutions on holds Hard ≥ Medium ≥ Easy; `tests/evo-ui.mjs` (WebKit, 393 px) failed on the old screen (no switch) and passes now.

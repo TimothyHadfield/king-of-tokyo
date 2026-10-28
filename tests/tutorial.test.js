@@ -172,6 +172,13 @@ test('the rules sheet covers the whole base game', () => {
   for (const fact of ['10 ♥', '20 ★', '2 ★', '1 ★', 'Tokyo Bay', '2 ⚡', 'Keep', 'Discard', 'four 2s = 3 ★']) assert.ok(all.includes(fact), 'missing fact: ' + fact);
 });
 
+test('the rules sheet explains the Evolutions option', () => {
+  const r = KT.rules(null);
+  const e = r.sections.find(x => x.id === 'options' && x.html.includes('Evolutions'));
+  assert.ok(e, 'no Evolutions section');
+  for (const fact of ['off', '8', '3 ♥', 'Permanent', 'Temporary', 'Settings']) assert.ok(e.html.includes(fact), 'missing fact: ' + fact);
+});
+
 test('the rules sheet links real videos that open in a new tab', () => {
   const r = KT.rules(null);
   const v = r.sections.find(x => x.id === 'videos');
