@@ -106,7 +106,7 @@ Others' sounds play at 0.85 volume. Button taps: fx.js default, skipping dice.
 - Weird-case pass not tried: two tabs on one save, online opponent going offline/AFK.
 - Table look: the card animations (deal/flip/slide) were seen only in headless shots, not watched in motion on a phone.
 - Tutorial: not tried on a real iPhone. Knock-outs are only in the Rules sheet.
-- Evolutions: "Play with Your Food" and Chest Thumping/claim taps came up only in some runs of `evo-ui.mjs` (claim once, food never by tap); `tests/two-browsers.mjs` with evolutions not run (the test's 2nd browser is blocked by the "New to King of Tokyo?" offer over Join, pre-existing); simplifications listed in docs/rules-check.md. My stats / Daily on the setup screen are 45 px below the fold at 393×659 with 4 seats: moving them up pushes Join below the fold at 6 seats (a layout call for Tim).
+- Evolutions: which decisions come up in `evo-ui.mjs` is random (the live run at 8407680 met and tapped all 8 kinds); `tests/two-browsers.mjs` with evolutions not run (the test's 2nd browser is blocked by the "New to King of Tokyo?" offer over Join, pre-existing); simplifications listed in docs/rules-check.md. My stats / Daily on the setup screen are 45 px below the fold at 393×659 with 4 seats: moving them up pushes Join below the fold at 6 seats (a layout call for Tim).
 - Improve pass: offline install not tried on a real iPhone home screen; claw swipe seen only in a still shot; the Daily's "same dice for everyone" holds only if players make the same moves (bots share the stream); Hard still buys only ~0.7 cards a game.
 
 ## Weird-case scenarios (2026-10-20)
