@@ -1,6 +1,6 @@
 /* King of Tokyo Lab: screens. Local games run through the shared online module's createLocal
    (same snapshot shape as online rooms), online rooms through createOnline. */
-import { createLocal } from './online.js?v=1';
+import { createLocal } from './online.js?v=a3d0418b';
 
 const { CARDS, MONSTERS, EDITIONS } = window.KotCards;
 // CARDS holds the names/costs/texts of one edition at a time: the running game's, else the Settings choice
@@ -461,7 +461,7 @@ function renderSetup(v) {
 // ------------------------------------------------------------------ online
 async function loadOnline() {
   if (net.room) return net.room;
-  const mod = await import('./online.js?v=1');
+  const mod = await import('./online.js?v=a3d0418b');
   if (net.room) return net.room;
   net.room = mod.createOnline({ game: GAME, gameId: 'king-of-tokyo', botDelayMs: 900 });
   net.room.on('change', s => { if (ui.mode !== 'online') return; onSnap(s); });
