@@ -514,9 +514,7 @@ table.res th:first-child, table.res td:first-child { text-align: left; }
 /* long card names stay on two lines on the phone's small cards, clear of the cost badge */
 @media (max-width: 899px) { .pc:not(.big) .nm { padding: 3px 2px; letter-spacing: -.01em; } .pc:not(.big) .nm.long { letter-spacing: -.03em; } }
 @media (min-width: 900px) { .seat .tok { width: 21px; height: 21px; font-size: 11px; } .dial svg { left: -6px; top: -6px; } }
-/* coach (css/coach.css): the first-visit offer sits above the phone's tab bar */
-:root { --coach-offer-bottom: calc(var(--tabbar) + 10px); }
-@media (min-width: 900px) { :root { --coach-offer-bottom: 18px; } }
+/* coach (css/coach.css): the first-visit offer is placed by game-coach 1.2.0 (place 'auto', avoids Start) */
 /* rules sheet: the dice drawn as the real black dice */
 .coach-rules .kdie { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: #17191f; vertical-align: middle; margin: 1px; }
 .coach-rules td:first-child { white-space: nowrap; }

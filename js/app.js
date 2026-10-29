@@ -451,7 +451,7 @@ function renderSetup(v) {
   if ($('#btn-rules0')) $('#btn-rules0').onclick = () => openRules();
   // first visit: offer the guided first game, once
   if (COACH && tour && !store.saved && !tour.seen() && !COACH.offered(TUT_ID)) {
-    COACH.offer({ id: TUT_ID, title: 'New to King of Tokyo?', text: 'Play a guided first game against two computers.', yes: 'Teach me', no: 'No thanks', onYes: startTutorial });
+    COACH.offer({ id: TUT_ID, title: 'New to King of Tokyo?', text: 'Play a guided first game against two computers.', yes: 'Teach me', no: 'No thanks', onYes: startTutorial, place: 'auto', avoid: ['#btn-new', '#btn-rules0', '#btn-stats0', '#btn-daily0'] });
   }
   $('#in-name').oninput = e => { st.name = e.target.value.slice(0, 20); save(); };
   $('#btn-create').onclick = () => createOnlineRoom();

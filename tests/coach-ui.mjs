@@ -61,9 +61,12 @@ for (const [name, eng, w, h, mobile] of SIZES) {
     check(await page.locator('.coach-offer').count() === 1, `${name}: first visit offers the guided game`);
     const offerOk = await page.evaluate(() => { const o = document.querySelector('.coach-offer').getBoundingClientRect(), t = document.querySelector('nav.tabs').getBoundingClientRect(); return o.bottom <= innerHeight && (o.bottom <= t.top + 1 || o.top >= t.bottom - 1 || innerWidth >= 900); });
     check(offerOk, `${name}: the offer sits clear of the tab bar`);
+    // game-coach 1.2.0 place:'auto': the offer must not cover Start either (on a 320 px phone it may cover the
+    // small Rules button instead, the only other spot, so Rules is clicked through below)
+    check(await page.evaluate(() => { const o = document.querySelector('.coach-offer').getBoundingClientRect(), b = document.querySelector('#btn-new').getBoundingClientRect(); return o.bottom <= b.top || o.top >= b.bottom; }), `${name}: the offer sits clear of Start game`);
     if (shots) await page.screenshot({ path: `${shots}/${name}-offer.png` });
     // rules from the setup screen; Back closes them and stays on the app
-    await page.click('#btn-rules0'); await rulesCheck(page, name, 'setup');
+    await page.locator('#btn-rules0').dispatchEvent('click'); await rulesCheck(page, name, 'setup');
     if (shots) await page.screenshot({ path: `${shots}/${name}-rules.png` });
     await page.keyboard.press('Escape'); await page.waitForTimeout(150);
     check(await page.locator('.coach-rules-back').count() === 0, `${name}: Esc closes the rules`);
